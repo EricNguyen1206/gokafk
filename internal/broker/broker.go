@@ -100,8 +100,8 @@ func (b *Broker) processProducerPCM(pcm []byte, conn net.Conn) (byte, error) {
 	for i, tp := range b.topics {
 		for _, pc := range tp.producers {
 			if pc.Conn == conn {
-				b.topics[i].mq.push(pcm)
-				b.topics[i].mq.debug()
+				b.topics[i].store.Append(pcm)
+				// b.topics[i].mq.debug()
 				return 0, nil
 			}
 		}
