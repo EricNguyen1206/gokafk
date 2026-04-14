@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 
@@ -29,7 +30,7 @@ func (p *Producer) StartProducerServer() error {
 	if err := p.registerProducerToBroker(streamRW); err != nil {
 		return fmt.Errorf("registration failed: %w", err)
 	}
-	fmt.Printf("Producer registered successfully (topic=%d)\n", p.TopicID)
+	slog.Info("Producer registered successfully", "topicID", p.TopicID)
 
 	// Step 2: Read from stdin and send PCM messages to broker
 	rd := bufio.NewReader(os.Stdin)
@@ -55,7 +56,7 @@ func (p *Producer) StartProducerServer() error {
 			return fmt.Errorf("read response failed: %w", err)
 		}
 		if resp != nil && resp.R_PCM != nil {
-			fmt.Printf("Response PCM: %d\n", *resp.R_PCM)
+			slog.Info("Response PCM", "message", *resp.R_PCM)
 		}
 	}
 

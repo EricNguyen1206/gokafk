@@ -3,6 +3,7 @@ package consumer
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"net"
 
 	"gokafk/internal/message"
@@ -74,7 +75,7 @@ func (c *Consumer) startConsumerServer() error {
 		if err != nil {
 			break
 		}
-		fmt.Printf("Received PCM: %s\n", string(pcm.PCM))
+		slog.Info("Received PCM", "message", string(pcm.PCM))
 
 		// Send response back
 		err = message.WriteMessageToStream(streamRW, message.Message{R_PCM: pcm.R_PCM})

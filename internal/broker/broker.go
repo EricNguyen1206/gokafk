@@ -3,6 +3,7 @@ package broker
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"net"
 
 	"gokafk/internal/message"
@@ -25,7 +26,7 @@ func (b *Broker) StartBrokerServer() error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			fmt.Printf("Error accepting connection: %v\n", err)
+			slog.Error("Error accepting connection", "error", err)
 			continue
 		}
 		go b.handleConnection(conn)
@@ -135,8 +136,8 @@ func (b *Broker) processProducerRegisterMessage(pRegMessage message.ProducerRegi
 		RW:   rw,
 	})
 
-	fmt.Printf("Producer registered to topic %d (total producers: %d)\n",
-		pRegMessage.TopicID, len(b.topics[topicIdx].producers))
+	slog.Info("Producer registered to topic", "topicID", pRegMessage.TopicID)
+	slog.Info("Total producers", "count", len(b.topics[topicIdx].producers))
 
 	var resp byte = 0
 	return &resp, nil

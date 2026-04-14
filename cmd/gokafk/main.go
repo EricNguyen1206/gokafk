@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -23,20 +24,7 @@ func main() {
 	case "server":
 		runServer()
 	case "producer":
-		fmt.Println("Trying to start producer processes")
-		port, err := strconv.ParseInt(os.Args[2], 10, 16)
-		if err != nil {
-			panic(err)
-		}
-		topicID, err := strconv.ParseInt(os.Args[3], 10, 16)
-		if err != nil {
-			panic(err)
-		}
-		producer := producer.Producer{
-			Port:    uint16(port),
-			TopicID: uint16(topicID),
-		}
-		producer.StartProducerServer()
+		runProducer()
 	case "consumer":
 		runConsumer()
 	default:
@@ -47,11 +35,28 @@ func main() {
 
 func runServer() {
 	b := &broker.Broker{}
-	fmt.Printf("Listening on port %d\n", message.BrokerPort)
+	slog.Info("Listening on port", "port", message.BrokerPort)
 	if err := b.StartBrokerServer(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		slog.Error("Error", "error", err)
 		os.Exit(1)
 	}
+}
+
+func runProducer() {
+	slog.Info("Trying to start producer processes")
+	port, err := strconv.ParseInt(os.Args[2], 10, 16)
+	if err != nil {
+		panic(err)
+	}
+	topicID, err := strconv.ParseInt(os.Args[3], 10, 16)
+	if err != nil {
+		panic(err)
+	}
+	producer := producer.Producer{
+		Port:    uint16(port),
+		TopicID: uint16(topicID),
+	}
+	producer.StartProducerServer()
 }
 
 func runConsumer() {
@@ -62,7 +67,7 @@ func runConsumer() {
 	}
 	defer c.Close()
 
-	fmt.Printf("Connected to server at port %d\n", message.BrokerPort)
+	slog.Info("Connected to server", "port", message.BrokerPort)
 	rd := bufio.NewReader(os.Stdin)
 
 	for {
@@ -72,18 +77,18 @@ func runConsumer() {
 		}
 
 		msg := strings.TrimRight(line, "\n")
-		fmt.Printf("Sent to server: %s\n", msg)
+		slog.Info("Sent to server", "message", msg)
 
 		if err := c.Send(msg); err != nil {
-			fmt.Fprintf(os.Stderr, "Send error: %v\n", err)
+			slog.Error("Send error", "error", err)
 			break
 		}
 
 		resp, err := c.Receive()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Receive error: %v\n", err)
+			slog.Error("Receive error", "error", err)
 			break
 		}
-		fmt.Printf("Receive message from server: %s\n", resp)
+		slog.Info("Receive message from server", "message", resp)
 	}
 }
