@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
-	"strings"
 
 	"gokafk/internal/broker"
 	"gokafk/internal/consumer"
@@ -60,35 +58,17 @@ func runProducer() {
 }
 
 func runConsumer() {
-	c, err := consumer.NewConsumerConnection(fmt.Sprintf(":%d", message.BrokerPort))
+	port, err := strconv.ParseInt(os.Args[2], 10, 16)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting: %v\n", err)
-		os.Exit(1)
+		panic(err)
 	}
-	defer c.Close()
-
-	slog.Info("Connected to server", "port", message.BrokerPort)
-	rd := bufio.NewReader(os.Stdin)
-
-	for {
-		line, err := rd.ReadString('\n')
-		if err != nil {
-			break
-		}
-
-		msg := strings.TrimRight(line, "\n")
-		slog.Info("Sent to server", "message", msg)
-
-		if err := c.Send(msg); err != nil {
-			slog.Error("Send error", "error", err)
-			break
-		}
-
-		resp, err := c.Receive()
-		if err != nil {
-			slog.Error("Receive error", "error", err)
-			break
-		}
-		slog.Info("Receive message from server", "message", resp)
+	topicID, err := strconv.ParseInt(os.Args[3], 10, 16)
+	if err != nil {
+		panic(err)
 	}
+	groupID, err := strconv.ParseInt(os.Args[4], 10, 16)
+	if err != nil {
+		panic(err)
+	}
+	consumer.Start(uint16(port), uint16(topicID), uint16(groupID))
 }

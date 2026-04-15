@@ -5,15 +5,19 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 
+	"gokafk/internal/consumer"
 	"gokafk/internal/message"
 )
 
 type Broker struct {
+	mu     sync.Mutex
 	topics []Topic
 }
 
 func (b *Broker) init() {
+	b.mu = sync.Mutex{}
 	b.topics = make([]Topic, 0)
 }
 
@@ -85,6 +89,13 @@ func (b *Broker) processBrokerMessage(msg *message.Message, conn net.Conn, rw *b
 		}
 		return &message.Message{R_P_REG: resp}, nil
 	}
+	if msg.C_REG != nil {
+		resp, err := b.processConsumerRegisterMessage(*msg.C_REG)
+		if err != nil {
+			return nil, err
+		}
+		return &message.Message{R_C_REG: resp}, nil
+	}
 	if msg.PCM != nil {
 		resp, err := b.processProducerPCM(msg.PCM, conn)
 		if err != nil {
@@ -114,6 +125,8 @@ func (b *Broker) processEchoMessage(echoMessage *string) (string, error) {
 }
 
 func (b *Broker) processProducerRegisterMessage(pRegMessage message.ProducerRegisterMessage, conn net.Conn, rw *bufio.ReadWriter) (*byte, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	var topicIdx int = -1
 	for idx, tp := range b.topics {
 		if tp.topicID == pRegMessage.TopicID {
@@ -143,6 +156,46 @@ func (b *Broker) processProducerRegisterMessage(pRegMessage message.ProducerRegi
 	return &resp, nil
 }
 
-func (b *Broker) startConsumerGroupConsumtion(cRegMessage message.ConsumerRegisterMessage) (*byte, error) {
-	return nil, nil
+func (b *Broker) processConsumerRegisterMessage(cRegMessage message.ConsumerRegisterMessage) ([]byte, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var topicIdx int = -1
+	for idx, tp := range b.topics {
+		if tp.topicID == cRegMessage.TopicID {
+			topicIdx = idx
+			break
+		}
+	}
+	if topicIdx == -1 {
+		tp := Topic{}
+		tp.init(cRegMessage.TopicID)
+		b.topics = append(b.topics, tp)
+		topicIdx = len(b.topics) - 1
+	}
+
+	_, alreadyRegistered := b.topics[topicIdx].consumers[cRegMessage.GroupID]
+	if !alreadyRegistered {
+		// Create new Consumer group
+		cg := consumer.CGroup{
+			GroupID:       cRegMessage.GroupID,
+			CurrentOffset: 0,
+			Consumers:     make([]consumer.ConsumerConnection, 0),
+		}
+		b.topics[topicIdx].consumers[cRegMessage.GroupID] = &cg
+	} else {
+		// Read message from disk and return for consumer
+		cGroup := b.topics[topicIdx].consumers[cRegMessage.GroupID]
+		data, err := b.topics[topicIdx].store.ReadOffset(cGroup.CurrentOffset)
+		if err != nil {
+			return nil, err
+		}
+		cGroup.CurrentOffset++
+		return data, nil
+	}
+
+	slog.Info("Consumer registered to topic", "topicID", cRegMessage.TopicID)
+	slog.Info("Total consumers", "count", len(b.topics[topicIdx].consumers))
+
+	var resp []byte = make([]byte, 4)
+	return resp, nil
 }

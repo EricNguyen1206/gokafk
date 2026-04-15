@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"time"
 
 	"gokafk/internal/message"
 )
 
+// Consumer Group
 type CGroup struct {
-	GroupID   uint16
-	Offset    uint
-	Consumers []ConsumerConnection
+	GroupID       uint16
+	CurrentOffset int
+	Consumers     []ConsumerConnection
 }
 
 type ConsumerConnection struct {
@@ -60,8 +62,10 @@ type Consumer struct {
 	Port int16
 }
 
-func (c *Consumer) startConsumerServer() error {
-	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", c.Port))
+// Start connect to Broker and continuously pull messages from Topic
+func Start(port uint16, topicID uint16, groupID uint16) error {
+	// 1. CONNECT TCP TO BROKER (same as Producer)
+	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", message.BrokerPort))
 	if err != nil {
 		return err
 	}
@@ -69,20 +73,46 @@ func (c *Consumer) startConsumerServer() error {
 
 	streamRW := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 
-	for {
-		// Read message from broker
-		pcm, err := message.ReadMessageFromStream(streamRW)
-		if err != nil {
-			break
-		}
-		slog.Info("Received PCM", "message", string(pcm.PCM))
-
-		// Send response back
-		err = message.WriteMessageToStream(streamRW, message.Message{R_PCM: pcm.R_PCM})
-		if err != nil {
-			break
-		}
+	// 2. SEND C_REG: Register Consumer to Broker
+	regMsg := message.ConsumerRegisterMessage{
+		Port:    port,
+		GroupID: groupID,
+		TopicID: topicID,
+	}
+	err = message.WriteMessageToStream(streamRW, message.Message{C_REG: &regMsg})
+	if err != nil {
+		return fmt.Errorf("consumer register failed: %w", err)
 	}
 
-	return nil
+	// 3. READ REGISTER RESPONSE FROM BROKER
+	resp, err := message.ReadMessageFromStream(streamRW)
+	if err != nil {
+		return fmt.Errorf("read register response failed: %w", err)
+	}
+	if resp == nil || resp.R_C_REG == nil {
+		return fmt.Errorf("unexpected register response from broker")
+	}
+	slog.Info("Consumer registered successfully", "topicID", topicID, "groupID", groupID)
+
+	// 4. PULL LOOP: Continously send C_REG to get next message
+	for {
+		// Send pull request (use C_REG again, Broker will know this consumer has registered)
+		err = message.WriteMessageToStream(streamRW, message.Message{C_REG: &regMsg})
+		if err != nil {
+			return fmt.Errorf("pull request failed: %w", err)
+		}
+
+		// READ PULL RESPONSE
+		pullResp, err := message.ReadMessageFromStream(streamRW)
+		if err != nil {
+			slog.Info("No more messages, waiting...", "offset", regMsg.TopicID)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// Print message to screen
+		if pullResp != nil && pullResp.R_C_REG != nil {
+			slog.Info("Consumed message", "data", string(pullResp.R_C_REG))
+		}
+	}
 }
