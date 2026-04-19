@@ -1,73 +1,157 @@
 package storage
 
 import (
-	"bytes"
 	"fmt"
-	"io"
-	"os"
+	"sync"
 	"testing"
 )
 
 func TestNewSegment(t *testing.T) {
-	// Create a temporary directory for testing
-	tempDir := t.TempDir()
-
-	// Test creating a new segment
-	topicID := uint16(1)
-	segment, err := NewSegment(tempDir, topicID)
+	dir := t.TempDir()
+	seg, err := NewSegment(dir, 1)
 	if err != nil {
-		t.Fatalf("Failed to create segment: %v", err)
+		t.Fatalf("NewSegment: %v", err)
 	}
-	defer segment.file.Close()
+	defer seg.Close()
 
-	// Verify the segment was created
-	filepath := fmt.Sprintf("%s/topic_%d.log", tempDir, topicID)
-	if _, err := os.Stat(filepath); os.IsNotExist(err) {
-		t.Errorf("Segment file does not exist: %s", filepath)
-	}
-
-	// Verify the segment has the correct offset
-	if segment.currentOffset != 0 {
-		t.Errorf("Expected offset 0, got %d", segment.currentOffset)
+	if seg.CurrentOffset() != 0 {
+		t.Errorf("initial offset: want 0, got %d", seg.CurrentOffset())
 	}
 }
 
-func TestSegment_Append(t *testing.T) {
-	// Create a temporary directory for testing
-	tempDir := t.TempDir()
-
-	// Test appending data to a segment
-	topicID := uint16(1)
-	segment, err := NewSegment(tempDir, topicID)
+func TestSegment_AppendAndRead(t *testing.T) {
+	dir := t.TempDir()
+	seg, err := NewSegment(dir, 1)
 	if err != nil {
-		t.Fatalf("Failed to create segment: %v", err)
+		t.Fatalf("NewSegment: %v", err)
 	}
-	defer segment.file.Close()
+	defer seg.Close()
 
-	// Test appending data
-	data := []byte("hello")
-	segment.Append(data)
+	messages := []string{"hello", "world", "gokafk"}
 
-	// Verify the data was appended
-	filepath := fmt.Sprintf("%s/topic_%d.log", tempDir, topicID)
-	file, err := os.Open(filepath)
+	// Append
+	for i, msg := range messages {
+		offset, err := seg.Append([]byte(msg))
+		if err != nil {
+			t.Fatalf("Append[%d]: %v", i, err)
+		}
+		if offset != int64(i) {
+			t.Errorf("Append[%d] offset: want %d, got %d", i, i, offset)
+		}
+	}
+
+	// Read back
+	for i, want := range messages {
+		data, err := seg.Read(int64(i))
+		if err != nil {
+			t.Fatalf("Read[%d]: %v", i, err)
+		}
+		if string(data) != want {
+			t.Errorf("Read[%d]: want %q, got %q", i, want, string(data))
+		}
+	}
+}
+
+func TestSegment_ReadOffsetNotFound(t *testing.T) {
+	dir := t.TempDir()
+	seg, err := NewSegment(dir, 1)
 	if err != nil {
-		t.Fatalf("Failed to open segment file: %v", err)
+		t.Fatalf("NewSegment: %v", err)
 	}
-	defer file.Close()
+	defer seg.Close()
 
-	content, err := io.ReadAll(file)
+	_, err = seg.Read(999)
+	if err != ErrOffsetNotFound {
+		t.Errorf("want ErrOffsetNotFound, got %v", err)
+	}
+}
+
+func TestSegment_ConcurrentAppend(t *testing.T) {
+	dir := t.TempDir()
+	seg, err := NewSegment(dir, 1)
 	if err != nil {
-		t.Fatalf("Failed to read segment file: %v", err)
+		t.Fatalf("NewSegment: %v", err)
+	}
+	defer seg.Close()
+
+	var wg sync.WaitGroup
+	n := 100
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := seg.Append([]byte(fmt.Sprintf("msg-%d", i)))
+			if err != nil {
+				t.Errorf("concurrent Append[%d]: %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if seg.CurrentOffset() != int64(n) {
+		t.Errorf("after %d appends: want offset %d, got %d", n, n, seg.CurrentOffset())
 	}
 
-	expectedContent := append(data, '\n')
-	if !bytes.Equal(content, expectedContent) {
-		t.Errorf("Expected content %q, got %q", expectedContent, content)
+	// Verify all readable
+	for i := int64(0); i < int64(n); i++ {
+		_, err := seg.Read(i)
+		if err != nil {
+			t.Errorf("Read[%d] after concurrent append: %v", i, err)
+		}
+	}
+}
+
+func TestSegment_CloseIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	seg, err := NewSegment(dir, 1)
+	if err != nil {
+		t.Fatalf("NewSegment: %v", err)
 	}
 
-	// Verify the segment offset was updated
-	if segment.currentOffset != len(expectedContent) {
-		t.Errorf("Expected offset %d, got %d", len(expectedContent), segment.currentOffset)
+	if err := seg.Close(); err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+	// Second close should not panic or error
+	if err := seg.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+}
+
+func TestSegment_RebuildIndex(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write some data
+	seg1, err := NewSegment(dir, 1)
+	if err != nil {
+		t.Fatalf("NewSegment: %v", err)
+	}
+	messages := []string{"alpha", "beta", "gamma"}
+	for _, msg := range messages {
+		if _, err := seg1.Append([]byte(msg)); err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+	}
+	seg1.Close()
+
+	// Re-open — should rebuild index from file
+	seg2, err := NewSegment(dir, 1)
+	if err != nil {
+		t.Fatalf("re-open NewSegment: %v", err)
+	}
+	defer seg2.Close()
+
+	if seg2.CurrentOffset() != 3 {
+		t.Errorf("rebuilt offset: want 3, got %d", seg2.CurrentOffset())
+	}
+
+	for i, want := range messages {
+		data, err := seg2.Read(int64(i))
+		if err != nil {
+			t.Fatalf("Read[%d] after rebuild: %v", i, err)
+		}
+		if string(data) != want {
+			t.Errorf("Read[%d] after rebuild: want %q, got %q", i, want, string(data))
+		}
 	}
 }

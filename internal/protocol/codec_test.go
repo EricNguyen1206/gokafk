@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"strings"
@@ -144,7 +145,7 @@ func TestCodecMultipleMessages(t *testing.T) {
 
 	// Should be EOF after last message
 	_, err := rc.ReadMessage(ctx)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("Expected EOF after last message, got %v", err)
 	}
 }

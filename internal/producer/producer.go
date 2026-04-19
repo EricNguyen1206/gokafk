@@ -2,39 +2,60 @@ package producer
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"os"
 
-	"gokafk/internal/message"
+	"gokafk/internal/config"
+	"gokafk/internal/protocol"
 )
 
-type Producer struct {
-	Port    uint16
-	TopicID uint16
-}
-
-func (p *Producer) StartProducerServer() error {
-	// Connect to the Broker (not to self)
-	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", message.BrokerPort))
+func Start(ctx context.Context, cfg *config.Config, port, topicID uint16, key string) error {
+	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", cfg.BrokerPort))
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	streamRW := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	codec := protocol.NewCodec(rw)
 
 	// Step 1: Register this producer with the broker
-	if err := p.registerProducerToBroker(streamRW); err != nil {
+	regMsg := protocol.ProducerRegisterMessage{
+		Port:    port,
+		TopicID: topicID,
+	}
+
+	err = codec.WriteMessage(ctx, &protocol.Message{
+		Type:    protocol.TypePReg,
+		CorrID:  1,
+		Payload: regMsg.Marshal(),
+	})
+	if err != nil {
 		return fmt.Errorf("registration failed: %w", err)
 	}
-	slog.Info("Producer registered successfully", "topicID", p.TopicID)
 
-	// Step 2: Read from stdin and send PCM messages to broker
+	// Wait for response
+	resp, err := codec.ReadMessage(ctx)
+	if err != nil || resp.Type != protocol.TypePRegResp {
+		return fmt.Errorf("unexpected response from broker: %v", err)
+	}
+	slog.Info("Producer registered successfully", "topicID", topicID)
+
+	// Step 2: Read from stdin and send Produce messages
 	rd := bufio.NewReader(os.Stdin)
+	var corrID uint32 = 2
+
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		line, err := rd.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
@@ -44,44 +65,32 @@ func (p *Producer) StartProducerServer() error {
 			}
 		}
 
-		// Send PCM message to broker
-		err = message.WriteMessageToStream(streamRW, message.Message{PCM: []byte(line)})
-		if err != nil {
-			return fmt.Errorf("send PCM failed: %w", err)
+		// Send ProduceMessage
+		prodMsg := protocol.ProduceMessage{
+			TopicID: topicID,
+			Value:   []byte(line),
+		}
+		if key != "" {
+			prodMsg.Key = []byte(key)
 		}
 
-		// Read response from broker
-		resp, err := message.ReadMessageFromStream(streamRW)
+		err = codec.WriteMessage(ctx, &protocol.Message{
+			Type:    protocol.TypeProduce,
+			CorrID:  corrID,
+			Payload: prodMsg.Marshal(),
+		})
+		if err != nil {
+			return fmt.Errorf("send produce failed: %w", err)
+		}
+
+		prodResp, err := codec.ReadMessage(ctx)
 		if err != nil {
 			return fmt.Errorf("read response failed: %w", err)
 		}
-		if resp != nil && resp.R_PCM != nil {
-			slog.Info("Response PCM", "message", *resp.R_PCM)
+		if prodResp != nil && prodResp.Type == protocol.TypeProduceResp {
+			slog.Debug("Message produced successfully")
 		}
-	}
-
-	return nil
-}
-
-func (p *Producer) registerProducerToBroker(rw *bufio.ReadWriter) error {
-	regMsg := message.ProducerRegisterMessage{
-		Port:    p.Port,
-		TopicID: p.TopicID,
-	}
-
-	// Send P_REG message to the broker
-	err := message.WriteMessageToStream(rw, message.Message{P_REG: &regMsg})
-	if err != nil {
-		return err
-	}
-
-	// Wait for R_P_REG response from broker
-	resp, err := message.ReadMessageFromStream(rw)
-	if err != nil {
-		return err
-	}
-	if resp == nil || resp.R_P_REG == nil {
-		return fmt.Errorf("unexpected response from broker")
+		corrID++
 	}
 
 	return nil

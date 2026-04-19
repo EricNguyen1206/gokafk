@@ -2,117 +2,100 @@ package consumer
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"time"
 
-	"gokafk/internal/message"
+	"gokafk/internal/config"
+	"gokafk/internal/protocol"
 )
 
-// Consumer Group
-type CGroup struct {
-	GroupID       uint16
-	CurrentOffset int
-	Consumers     []ConsumerConnection
-}
-
-type ConsumerConnection struct {
-	Conn net.Conn
-	RW   *bufio.ReadWriter
-}
-
-func NewConsumerConnection(addr string) (*ConsumerConnection, error) {
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	return &ConsumerConnection{Conn: conn, RW: rw}, nil
-}
-
-func (c *ConsumerConnection) Send(msg string) error {
-	return message.WriteEchoToStream(c.RW, msg)
-}
-
-func (c *ConsumerConnection) Receive() (string, error) {
-	header, err := c.RW.ReadByte()
-	if err != nil {
-		return "", err
-	}
-	if header == 0 {
-		return "", fmt.Errorf("empty response")
-	}
-	data, err := c.RW.Peek(int(header))
-	if err != nil {
-		return "", err
-	}
-	_, err = c.RW.Discard(int(header))
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func (c *ConsumerConnection) Close() error {
-	return c.Conn.Close()
-}
-
-type Consumer struct {
-	Port int16
-}
-
-// Start connect to Broker and continuously pull messages from Topic
-func Start(port uint16, topicID uint16, groupID uint16) error {
-	// 1. CONNECT TCP TO BROKER (same as Producer)
-	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", message.BrokerPort))
+// Start connects to Broker and continuously pulls messages from Topic
+func Start(ctx context.Context, cfg *config.Config, port, topicID, groupID uint16) error {
+	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", cfg.BrokerPort))
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	streamRW := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	codec := protocol.NewCodec(rw)
 
-	// 2. SEND C_REG: Register Consumer to Broker
-	regMsg := message.ConsumerRegisterMessage{
+	// SEND C_REG: Register Consumer to Broker
+	regMsg := protocol.ConsumerRegisterMessage{
 		Port:    port,
 		GroupID: groupID,
 		TopicID: topicID,
 	}
-	err = message.WriteMessageToStream(streamRW, message.Message{C_REG: &regMsg})
+	err = codec.WriteMessage(ctx, &protocol.Message{
+		Type:    protocol.TypeCReg,
+		CorrID:  1,
+		Payload: regMsg.Marshal(),
+	})
 	if err != nil {
 		return fmt.Errorf("consumer register failed: %w", err)
 	}
 
-	// 3. READ REGISTER RESPONSE FROM BROKER
-	resp, err := message.ReadMessageFromStream(streamRW)
+	// READ REGISTER RESPONSE FROM BROKER
+	resp, err := codec.ReadMessage(ctx)
 	if err != nil {
 		return fmt.Errorf("read register response failed: %w", err)
 	}
-	if resp == nil || resp.R_C_REG == nil {
+	if resp == nil || resp.Type != protocol.TypeCRegResp {
 		return fmt.Errorf("unexpected register response from broker")
 	}
-	slog.Info("Consumer registered successfully", "topicID", topicID, "groupID", groupID)
+	memberID := string(resp.Payload)
+	slog.Info("Consumer registered successfully", "topicID", topicID, "groupID", groupID, "memberID", memberID)
 
-	// 4. PULL LOOP: Continously send C_REG to get next message
+	var corrID uint32 = 2
+
+	// PULL LOOP
 	for {
-		// Send pull request (use C_REG again, Broker will know this consumer has registered)
-		err = message.WriteMessageToStream(streamRW, message.Message{C_REG: &regMsg})
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		fetchReq := (&protocol.FetchRequest{
+			TopicID:  topicID,
+			GroupID:  groupID,
+			MemberID: memberID,
+		}).Marshal()
+
+		err = codec.WriteMessage(ctx, &protocol.Message{
+			Type:    protocol.TypeFetch,
+			CorrID:  corrID,
+			Payload: fetchReq,
+		})
 		if err != nil {
 			return fmt.Errorf("pull request failed: %w", err)
 		}
+		corrID++
 
 		// READ PULL RESPONSE
-		pullResp, err := message.ReadMessageFromStream(streamRW)
+		pullResp, err := codec.ReadMessage(ctx)
 		if err != nil {
-			slog.Info("No more messages, waiting...", "offset", regMsg.TopicID)
-			time.Sleep(1 * time.Second)
-			continue
+			slog.Debug("pull read error", "err", err)
+			return err
 		}
 
-		// Print message to screen
-		if pullResp != nil && pullResp.R_C_REG != nil {
-			slog.Info("Consumed message", "data", string(pullResp.R_C_REG))
+		var fetchResp protocol.FetchResponse
+		if err := fetchResp.Unmarshal(pullResp.Payload); err == nil {
+			if fetchResp.PartitionID >= 0 && len(fetchResp.Data) > 0 {
+				slog.Info("consumed",
+					"partition", fetchResp.PartitionID,
+					"offset", fetchResp.Offset,
+					"data", string(fetchResp.Data),
+				)
+			} else {
+				// No messages
+				time.Sleep(1 * time.Second)
+			}
+		} else {
+			time.Sleep(1 * time.Second)
 		}
 	}
 }

@@ -2,200 +2,148 @@ package broker
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"sync"
 
-	"gokafk/internal/consumer"
-	"gokafk/internal/message"
+	"gokafk/internal/config"
+	"gokafk/internal/protocol"
 )
 
+// Broker is the central TCP server that routes messages between producers and consumers.
 type Broker struct {
-	mu     sync.Mutex
-	topics []Topic
+	cfg      *config.Config
+	mu       sync.RWMutex
+	topics   map[uint16]*Topic  // topicID → Topic
+	producers map[net.Conn]uint16
+	listener  net.Listener
+	wg        sync.WaitGroup
 }
 
-func (b *Broker) init() {
-	b.mu = sync.Mutex{}
-	b.topics = make([]Topic, 0)
-}
-
-func (b *Broker) StartBrokerServer() error {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", message.BrokerPort))
-	if err != nil {
-		return err
+// NewBroker creates a new broker with the given configuration.
+func NewBroker(cfg *config.Config) *Broker {
+	return &Broker{
+		cfg:       cfg,
+		topics:    make(map[uint16]*Topic),
+		producers: make(map[net.Conn]uint16),
 	}
-	defer ln.Close()
+}
+
+// Start begins accepting TCP connections. Blocks until ctx is cancelled.
+func (b *Broker) Start(ctx context.Context) error {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", b.cfg.BrokerPort))
+	if err != nil {
+		return fmt.Errorf("broker listen: %w", err)
+	}
+	b.listener = ln
+
+	// Shutdown goroutine
+	go func() {
+		<-ctx.Done()
+		slog.Info("broker shutting down")
+		ln.Close()
+	}()
+
+	slog.Info("broker started", "port", b.cfg.BrokerPort)
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			slog.Error("Error accepting connection", "error", err)
+			if ctx.Err() != nil {
+				break // context cancelled
+			}
+			slog.Error("accept error", "err", err)
 			continue
 		}
-		go b.handleConnection(conn)
+
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.handleConnection(ctx, conn)
+		}()
 	}
+
+	// Wait for all connections to drain
+	b.wg.Wait()
+
+	// Close all topics
+	b.mu.RLock()
+	for _, tp := range b.topics {
+		tp.Close()
+	}
+	b.mu.RUnlock()
+
+	slog.Info("broker stopped")
+	return nil
 }
 
-func (b *Broker) handleConnection(conn net.Conn) {
+func (b *Broker) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
+	defer b.cleanupConnection(conn)
+
 	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	codec := protocol.NewCodec(rw)
+
+	slog.Info("new connection", "remote", conn.RemoteAddr())
 
 	for {
-		// read message
-		rawMsg, err := message.ReadFromStream(rw)
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		msg, err := codec.ReadMessage(ctx)
 		if err != nil {
-			break
+			slog.Debug("connection read error", "remote", conn.RemoteAddr(), "err", err)
+			return
 		}
 
-		// process message
-		if rawMsg != nil {
-			msg := message.ParseMessage(rawMsg)
-			if msg != nil {
-				resp, err := b.processBrokerMessage(msg, conn, rw)
-				if err != nil {
-					break
-				}
-				if resp != nil {
-					message.WriteMessageToStream(rw, *resp)
-				}
-			}
-		}
-
-	}
-}
-
-/*
-*
-
-	Process message:
-	- Call inner message handler base on type
-	- Return correct Message
-
-*
-*/
-func (b *Broker) processBrokerMessage(msg *message.Message, conn net.Conn, rw *bufio.ReadWriter) (*message.Message, error) {
-	if msg.ECHO != nil {
-		resp, err := b.processEchoMessage(msg.ECHO)
+		resp, err := b.routeMessage(ctx, msg, conn)
 		if err != nil {
-			return nil, err
+			slog.Error("message handling error", "type", msg.Type, "err", err)
+			return
 		}
-		return &message.Message{R_ECHO: &resp}, nil
-	}
-	if msg.P_REG != nil {
-		resp, err := b.processProducerRegisterMessage(*msg.P_REG, conn, rw)
-		if err != nil {
-			return nil, err
-		}
-		return &message.Message{R_P_REG: resp}, nil
-	}
-	if msg.C_REG != nil {
-		resp, err := b.processConsumerRegisterMessage(*msg.C_REG)
-		if err != nil {
-			return nil, err
-		}
-		return &message.Message{R_C_REG: resp}, nil
-	}
-	if msg.PCM != nil {
-		resp, err := b.processProducerPCM(msg.PCM, conn)
-		if err != nil {
-			return nil, err
-		}
-		return &message.Message{R_PCM: &resp}, nil
-	}
-	return nil, nil
-}
 
-func (b *Broker) processProducerPCM(pcm []byte, conn net.Conn) (byte, error) {
-	// Find which topic this producer belongs to
-	for i, tp := range b.topics {
-		for _, pc := range tp.producers {
-			if pc.Conn == conn {
-				b.topics[i].store.Append(pcm)
-				// b.topics[i].mq.debug()
-				return 0, nil
+		if resp != nil {
+			if err := codec.WriteMessage(ctx, resp); err != nil {
+				slog.Error("response write error", "err", err)
+				return
 			}
 		}
 	}
-	return 1, fmt.Errorf("producer not registered to any topic")
 }
 
-func (b *Broker) processEchoMessage(echoMessage *string) (string, error) {
-	return fmt.Sprintf("I have receiver: %s", *echoMessage), nil
-}
+func (b *Broker) getOrCreateTopic(topicID uint16) (*Topic, error) {
+	b.mu.RLock()
+	tp, ok := b.topics[topicID]
+	b.mu.RUnlock()
 
-func (b *Broker) processProducerRegisterMessage(pRegMessage message.ProducerRegisterMessage, conn net.Conn, rw *bufio.ReadWriter) (*byte, error) {
+	if ok {
+		return tp, nil
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	var topicIdx int = -1
-	for idx, tp := range b.topics {
-		if tp.topicID == pRegMessage.TopicID {
-			topicIdx = idx
-			break
-		}
-	}
-	if topicIdx == -1 {
-		tp := Topic{}
-		tp.init(pRegMessage.TopicID)
-		b.topics = append(b.topics, tp)
-		topicIdx = len(b.topics) - 1
+
+	// Double-check after acquiring write lock
+	if tp, ok := b.topics[topicID]; ok {
+		return tp, nil
 	}
 
-	// Save the current connection into the topic's producer list.
-	// The handleConnection loop will continue reading PCM messages
-	// from this same connection — no need for a separate goroutine.
-	b.topics[topicIdx].producers = append(b.topics[topicIdx].producers, ProducerConnection{
-		Conn: conn,
-		RW:   rw,
-	})
-
-	slog.Info("Producer registered to topic", "topicID", pRegMessage.TopicID)
-	slog.Info("Total producers", "count", len(b.topics[topicIdx].producers))
-
-	var resp byte = 0
-	return &resp, nil
+	tp, err := NewTopic(topicID, b.cfg.DataDir, b.cfg.NumPartitions)
+	if err != nil {
+		return nil, err
+	}
+	b.topics[topicID] = tp
+	return tp, nil
 }
 
-func (b *Broker) processConsumerRegisterMessage(cRegMessage message.ConsumerRegisterMessage) ([]byte, error) {
+func (b *Broker) cleanupConnection(conn net.Conn) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	var topicIdx int = -1
-	for idx, tp := range b.topics {
-		if tp.topicID == cRegMessage.TopicID {
-			topicIdx = idx
-			break
-		}
-	}
-	if topicIdx == -1 {
-		tp := Topic{}
-		tp.init(cRegMessage.TopicID)
-		b.topics = append(b.topics, tp)
-		topicIdx = len(b.topics) - 1
-	}
-
-	_, alreadyRegistered := b.topics[topicIdx].consumers[cRegMessage.GroupID]
-	if !alreadyRegistered {
-		// Create new Consumer group
-		cg := consumer.CGroup{
-			GroupID:       cRegMessage.GroupID,
-			CurrentOffset: 0,
-			Consumers:     make([]consumer.ConsumerConnection, 0),
-		}
-		b.topics[topicIdx].consumers[cRegMessage.GroupID] = &cg
-	} else {
-		// Read message from disk and return for consumer
-		cGroup := b.topics[topicIdx].consumers[cRegMessage.GroupID]
-		data, err := b.topics[topicIdx].store.ReadOffset(cGroup.CurrentOffset)
-		if err != nil {
-			return nil, err
-		}
-		cGroup.CurrentOffset++
-		return data, nil
-	}
-
-	slog.Info("Consumer registered to topic", "topicID", cRegMessage.TopicID)
-	slog.Info("Total consumers", "count", len(b.topics[topicIdx].consumers))
-
-	var resp []byte = make([]byte, 4)
-	return resp, nil
+	delete(b.producers, conn)
+	slog.Info("connection cleaned up", "remote", conn.RemoteAddr())
 }
