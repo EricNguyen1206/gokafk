@@ -14,9 +14,9 @@ import (
 
 // Broker is the central TCP server that routes messages between producers and consumers.
 type Broker struct {
-	cfg      *config.Config
-	mu       sync.RWMutex
-	topics   map[uint16]*Topic  // topicID → Topic
+	cfg       *config.Config
+	mu        sync.RWMutex
+	topics    map[uint16]*Topic // topicID → Topic
 	producers map[net.Conn]uint16
 	listener  net.Listener
 	wg        sync.WaitGroup

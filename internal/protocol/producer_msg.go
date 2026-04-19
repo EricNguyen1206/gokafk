@@ -5,22 +5,6 @@ import (
 	"errors"
 )
 
-// TODO [Phase 1 - Task 3]: ProducerRegisterMessage serialization
-// See: docs/plans/2026-04-18-phase1-foundation-refactor.md — Task 3
-//
-// This replaces internal/message/producerRegisterMessage.go
-//
-// Wire format: [2 bytes port][2 bytes topicID] = 4 bytes total
-// Use encoding/binary.BigEndian for consistency.
-//
-// Implement:
-// - Marshal() []byte
-// - Unmarshal(data []byte) error — validate len >= 4
-//
-// Write tests in message_test.go:
-// - TestProducerRegisterMessage_RoundTrip
-// - TestProducerRegisterMessage_UnmarshalTooShort
-
 // ProducerRegisterMessage is sent by a producer to register with the broker.
 type ProducerRegisterMessage struct {
 	Port    uint16

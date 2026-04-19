@@ -1,27 +1,5 @@
 package storage
 
-// TODO [Phase 1 - Task 6]: Rewrite Segment to implement Store interface
-// See: docs/plans/2026-04-18-phase1-foundation-refactor.md — Task 6
-//
-// Changes needed:
-// 1. Replace sync.Mutex → sync.RWMutex (reads don't block each other)
-// 2. Add sparse index: map[int64]int64 (messageOffset → bytePosition in file)
-// 3. Append() returns (int64, error) instead of void — return assigned offset
-// 4. Read() uses index for O(1) lookup instead of scanning from line 0
-// 5. Add rebuildIndex() — scan file on startup to reconstruct index
-// 6. Add Close() — idempotent, track closed state
-// 7. Add CurrentOffset() int64
-// 8. Open file with O_RDWR (not O_WRONLY) — needed for rebuild
-// 9. All errors must be returned, never ignored
-// 10. Ensure Segment satisfies Store interface: var _ Store = (*Segment)(nil)
-//
-// Write tests in segment_test.go:
-// - TestSegment_AppendAndRead (verify offset return + O(1) read)
-// - TestSegment_ReadOffsetNotFound
-// - TestSegment_ConcurrentAppend (race detector)
-// - TestSegment_CloseIdempotent
-// - TestSegment_RebuildIndex (close + reopen, verify data intact)
-
 import (
 	"bufio"
 	"bytes"
@@ -29,10 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"sync"
-)
-
-const (
-	SEGMENT_SIZE = 1024 * 1024 * 1024 // 1GB
 )
 
 // Segment implements the Store interface as an append-only log file

@@ -34,7 +34,7 @@ func (p *Partition) ID() int {
 func (p *Partition) Append(data []byte) (int64, error) {
 	offset, err := p.store.Append(data)
 	if err == nil {
-		// Update highest offset 
+		// Update highest offset
 		atomic.StoreInt64(&p.currOffset, offset+1)
 	}
 	return offset, err

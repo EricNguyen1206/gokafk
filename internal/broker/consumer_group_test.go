@@ -12,9 +12,10 @@ type mockConn struct {
 	addr string
 }
 
-type mockAddr struct { id string }
+type mockAddr struct{ id string }
+
 func (m *mockAddr) Network() string { return "tcp" }
-func (m *mockAddr) String() string { return m.id }
+func (m *mockAddr) String() string  { return m.id }
 
 func (m *mockConn) RemoteAddr() net.Addr {
 	return &mockAddr{id: m.addr}

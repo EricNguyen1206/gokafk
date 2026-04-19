@@ -9,27 +9,6 @@ import (
 	"io"
 )
 
-// TODO [Phase 1 - Task 4]: Wire-format codec with 4-byte header + CRC32
-// See: docs/plans/2026-04-18-phase1-foundation-refactor.md — Task 4
-//
-// Wire format:
-//   [4 bytes length (BE)] [1 byte type] [4 bytes corrID (BE)] [4 bytes CRC32 (BE)] [N bytes payload]
-//   length = size of everything after the length field
-//
-// Implement:
-// - NewCodec(rw *bufio.ReadWriter) *Codec
-// - WriteMessage(ctx, msg) — serialize with CRC32, flush
-// - ReadMessage(ctx) — deserialize, verify CRC32, return error on mismatch
-// - Context check for cancellation
-//
-// Packages needed: encoding/binary, hash/crc32, io, fmt
-//
-// Write tests in codec_test.go:
-// - TestCodecRoundTrip
-// - TestCodecEmptyPayload
-// - TestCodecCRC32Corruption
-// - TestCodecMultipleMessages
-
 /*
 - Codec = Encoder + Decoder
 - Codec reads and writes framed messages on a buffered stream.

@@ -99,7 +99,7 @@ func (cg *ConsumerGroup) Rebalance(numPartitions int) {
 func (cg *ConsumerGroup) GetAssignments(memberID string) []int {
 	cg.mu.RLock()
 	defer cg.mu.RUnlock()
-	
+
 	if parts, ok := cg.assignments[memberID]; ok {
 		// return a copy to prevent mutation
 		res := make([]int, len(parts))
@@ -112,7 +112,7 @@ func (cg *ConsumerGroup) GetAssignments(memberID string) []int {
 func (cg *ConsumerGroup) GetAndAdvancePartitionOffset(partID int) int64 {
 	cg.mu.Lock()
 	defer cg.mu.Unlock()
-	
+
 	offset := cg.offsets[partID]
 	cg.offsets[partID] = offset + 1
 	return offset
