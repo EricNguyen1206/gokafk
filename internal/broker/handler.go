@@ -41,15 +41,15 @@ func (b *Broker) handleProducerRegister(msg *protocol.Message, conn net.Conn) (*
 		return nil, fmt.Errorf("parse producer register: %w", err)
 	}
 
-	if _, err := b.getOrCreateTopic(regMsg.TopicID); err != nil {
-		return nil, fmt.Errorf("create topic %d: %w", regMsg.TopicID, err)
+	if _, err := b.getOrCreateTopic(regMsg.Topic); err != nil {
+		return nil, fmt.Errorf("create topic %s: %w", regMsg.Topic, err)
 	}
 
 	b.mu.Lock()
-	b.producers[conn] = regMsg.TopicID
+	b.producers[conn] = regMsg.Topic
 	b.mu.Unlock()
 
-	slog.Info("producer registered", "topicID", regMsg.TopicID, "remote", conn.RemoteAddr())
+	slog.Info("producer registered", "topic", regMsg.Topic, "remote", conn.RemoteAddr())
 
 	return &protocol.Message{
 		Type:    protocol.TypePRegResp,
@@ -64,20 +64,20 @@ func (b *Broker) handleConsumerRegister(msg *protocol.Message, conn net.Conn) (*
 		return nil, fmt.Errorf("parse consumer register: %w", err)
 	}
 
-	tp, err := b.getOrCreateTopic(regMsg.TopicID)
+	tp, err := b.getOrCreateTopic(regMsg.Topic)
 	if err != nil {
-		return nil, fmt.Errorf("create topic %d: %w", regMsg.TopicID, err)
+		return nil, fmt.Errorf("create topic %s: %w", regMsg.Topic, err)
 	}
 
-	cg := tp.GetOrCreateConsumerGroup(regMsg.GroupID)
+	cg := tp.GetOrCreateConsumerGroup(regMsg.Group)
 	memberID := cg.AddMember(conn)
 
 	// Trigger rebalance
 	cg.Rebalance(tp.NumPartitions())
 
 	slog.Info("consumer registered + rebalanced",
-		"topicID", regMsg.TopicID,
-		"groupID", regMsg.GroupID,
+		"topic", regMsg.Topic,
+		"group", regMsg.Group,
 		"memberID", memberID,
 		"members", cg.MemberCount(),
 		"assignments", cg.GetAssignments(memberID),
@@ -96,17 +96,17 @@ func (b *Broker) handleProduce(msg *protocol.Message, conn net.Conn) (*protocol.
 		return nil, fmt.Errorf("parse produce: %w", err)
 	}
 
-	tp, err := b.getOrCreateTopic(prodMsg.TopicID)
+	tp, err := b.getOrCreateTopic(prodMsg.Topic)
 	if err != nil {
-		return nil, fmt.Errorf("get topic %d: %w", prodMsg.TopicID, err)
+		return nil, fmt.Errorf("get topic %s: %w", prodMsg.Topic, err)
 	}
 
 	partID, offset, err := tp.Append(prodMsg.Key, prodMsg.Value)
 	if err != nil {
-		return nil, fmt.Errorf("produce to topic %d: %w", prodMsg.TopicID, err)
+		return nil, fmt.Errorf("produce to topic %s: %w", prodMsg.Topic, err)
 	}
 
-	slog.Debug("produced", "topic", prodMsg.TopicID, "partition", partID, "offset", offset)
+	slog.Debug("produced", "topic", prodMsg.Topic, "partition", partID, "offset", offset)
 
 	return &protocol.Message{
 		Type:    protocol.TypeProduceResp,
@@ -122,11 +122,11 @@ func (b *Broker) handleFetch(msg *protocol.Message, conn net.Conn) (*protocol.Me
 	}
 
 	b.mu.RLock()
-	tp, ok := b.topics[fetchReq.TopicID]
+	tp, ok := b.topics[fetchReq.Topic]
 	b.mu.RUnlock()
 
 	if !ok {
-		slog.Error("topic not found in fetch", "topicID", fetchReq.TopicID)
+		slog.Error("topic not found in fetch", "topic", fetchReq.Topic)
 		resp := protocol.FetchResponse{PartitionID: -1, Offset: -1}
 		return &protocol.Message{
 			Type:    protocol.TypeFetchResp,
@@ -135,11 +135,11 @@ func (b *Broker) handleFetch(msg *protocol.Message, conn net.Conn) (*protocol.Me
 		}, nil
 	}
 
-	cg := tp.GetOrCreateConsumerGroup(fetchReq.GroupID)
+	cg := tp.GetOrCreateConsumerGroup(fetchReq.Group)
 	assignments := cg.GetAssignments(fetchReq.MemberID)
 
 	if len(assignments) == 0 {
-		slog.Error("no assignments for member", "member", fetchReq.MemberID, "group", fetchReq.GroupID)
+		slog.Error("no assignments for member", "member", fetchReq.MemberID, "group", fetchReq.Group)
 		resp := protocol.FetchResponse{PartitionID: -1, Offset: -1}
 		return &protocol.Message{
 			Type:    protocol.TypeFetchResp,

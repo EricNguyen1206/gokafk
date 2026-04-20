@@ -4,51 +4,24 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
-	"net"
 	"os"
 
 	"gokafk/internal/config"
-	"gokafk/internal/protocol"
+	"gokafk/pkg/client"
 )
 
-func Start(ctx context.Context, cfg *config.Config, port, topicID uint16, key string) error {
-	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", cfg.BrokerPort))
-	if err != nil {
+func Start(ctx context.Context, cfg *config.Config, port uint16, topic, key string) error {
+	cli := client.NewClient(cfg)
+	p := cli.Producer(port)
+	if err := p.Connect(ctx, topic); err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer p.Close()
 
-	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	codec := protocol.NewCodec(rw)
+	slog.Info("Producer registered successfully", "topic", topic)
 
-	// Step 1: Register this producer with the broker
-	regMsg := protocol.ProducerRegisterMessage{
-		Port:    port,
-		TopicID: topicID,
-	}
-
-	err = codec.WriteMessage(ctx, &protocol.Message{
-		Type:    protocol.TypePReg,
-		CorrID:  1,
-		Payload: regMsg.Marshal(),
-	})
-	if err != nil {
-		return fmt.Errorf("registration failed: %w", err)
-	}
-
-	// Wait for response
-	resp, err := codec.ReadMessage(ctx)
-	if err != nil || resp.Type != protocol.TypePRegResp {
-		return fmt.Errorf("unexpected response from broker: %v", err)
-	}
-	slog.Info("Producer registered successfully", "topicID", topicID)
-
-	// Step 2: Read from stdin and send Produce messages
 	rd := bufio.NewReader(os.Stdin)
-	var corrID uint32 = 2
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -56,42 +29,29 @@ func Start(ctx context.Context, cfg *config.Config, port, topicID uint16, key st
 		default:
 		}
 
+		fmt.Print("> ")
 		line, err := rd.ReadString('\n')
 		if err != nil {
-			if err == io.EOF {
-				break
-			} else {
-				return err
-			}
+			return err
+		}
+		// Strip newline
+		if len(line) > 0 && line[len(line)-1] == '\n' {
+			line = line[:len(line)-1]
 		}
 
-		// Send ProduceMessage
-		prodMsg := protocol.ProduceMessage{
-			TopicID: topicID,
-			Value:   []byte(line),
-		}
+		var k []byte
 		if key != "" {
-			prodMsg.Key = []byte(key)
+			k = []byte(key)
 		}
 
-		err = codec.WriteMessage(ctx, &protocol.Message{
-			Type:    protocol.TypeProduce,
-			CorrID:  corrID,
-			Payload: prodMsg.Marshal(),
+		err = p.Send(ctx, topic, client.Message{
+			Key:   k,
+			Value: []byte(line),
 		})
 		if err != nil {
-			return fmt.Errorf("send produce failed: %w", err)
+			slog.Error("send failed", "err", err)
+		} else {
+			slog.Info("Produce OK")
 		}
-
-		prodResp, err := codec.ReadMessage(ctx)
-		if err != nil {
-			return fmt.Errorf("read response failed: %w", err)
-		}
-		if prodResp != nil && prodResp.Type == protocol.TypeProduceResp {
-			slog.Debug("Message produced successfully")
-		}
-		corrID++
 	}
-
-	return nil
 }

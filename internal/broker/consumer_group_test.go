@@ -26,7 +26,7 @@ func newMockConn(id string) *mockConn {
 }
 
 func TestConsumerGroup_Rebalance_SingleConsumer(t *testing.T) {
-	cg := NewConsumerGroup(1)
+	cg := NewConsumerGroup("group-1")
 	conn := newMockConn("consumer-1")
 	memberID := cg.AddMember(conn)
 
@@ -39,7 +39,7 @@ func TestConsumerGroup_Rebalance_SingleConsumer(t *testing.T) {
 }
 
 func TestConsumerGroup_Rebalance_EvenSplit(t *testing.T) {
-	cg := NewConsumerGroup(1)
+	cg := NewConsumerGroup("group-1")
 
 	members := make([]string, 3)
 	for i := 0; i < 3; i++ {
@@ -57,7 +57,7 @@ func TestConsumerGroup_Rebalance_EvenSplit(t *testing.T) {
 }
 
 func TestConsumerGroup_Rebalance_Remainder(t *testing.T) {
-	cg := NewConsumerGroup(1)
+	cg := NewConsumerGroup("group-1")
 
 	m1 := cg.AddMember(newMockConn("c-0"))
 	m2 := cg.AddMember(newMockConn("c-1"))
@@ -79,7 +79,7 @@ func TestConsumerGroup_Rebalance_Remainder(t *testing.T) {
 }
 
 func TestConsumerGroup_Rebalance_AfterLeave(t *testing.T) {
-	cg := NewConsumerGroup(1)
+	cg := NewConsumerGroup("group-1")
 
 	m1 := cg.AddMember(newMockConn("c-0"))
 	m2 := cg.AddMember(newMockConn("c-1"))
@@ -97,7 +97,7 @@ func TestConsumerGroup_Rebalance_AfterLeave(t *testing.T) {
 }
 
 func TestConsumerGroup_PerPartitionOffset(t *testing.T) {
-	cg := NewConsumerGroup(1)
+	cg := NewConsumerGroup("group-1")
 
 	// Get and advance offset for partition 0
 	o1 := cg.GetAndAdvancePartitionOffset(0)

@@ -6,31 +6,62 @@ import (
 )
 
 type FetchRequest struct {
-	TopicID  uint16
-	GroupID  uint16
+	Topic    string
+	Group    string
 	MemberID string
 }
 
 func (m *FetchRequest) Marshal() []byte {
-	buf := make([]byte, 6+len(m.MemberID))
-	binary.BigEndian.PutUint16(buf[0:2], m.TopicID)
-	binary.BigEndian.PutUint16(buf[2:4], m.GroupID)
-	binary.BigEndian.PutUint16(buf[4:6], uint16(len(m.MemberID)))
-	copy(buf[6:], m.MemberID)
+	tLen := uint16(len(m.Topic))
+	gLen := uint16(len(m.Group))
+	mLen := uint16(len(m.MemberID))
+
+	// [2][Topic] + [2][Group] + [2][MemberID]
+	bufSize := 2 + int(tLen) + 2 + int(gLen) + 2 + int(mLen)
+	buf := make([]byte, bufSize)
+
+	binary.BigEndian.PutUint16(buf[0:2], tLen)
+	copy(buf[2:2+int(tLen)], m.Topic)
+
+	offset := 2 + int(tLen)
+	binary.BigEndian.PutUint16(buf[offset:offset+2], gLen)
+	copy(buf[offset+2:offset+2+int(gLen)], m.Group)
+
+	offset += 2 + int(gLen)
+	binary.BigEndian.PutUint16(buf[offset:offset+2], mLen)
+	copy(buf[offset+2:], m.MemberID)
+
 	return buf
 }
 
 func (m *FetchRequest) Unmarshal(data []byte) error {
-	if len(data) < 6 {
+	if len(data) < 2 {
 		return errors.New("fetch request data too short")
 	}
-	m.TopicID = binary.BigEndian.Uint16(data[0:2])
-	m.GroupID = binary.BigEndian.Uint16(data[2:4])
-	idLen := int(binary.BigEndian.Uint16(data[4:6]))
-	if len(data) < 6+idLen {
+
+	// Read Topic
+	tLen := binary.BigEndian.Uint16(data[0:2])
+	if len(data) < 2+int(tLen)+2 {
+		return errors.New("data too short for topic/group length")
+	}
+	m.Topic = string(data[2 : 2+int(tLen)])
+
+	// Read Group
+	offset := 2 + int(tLen)
+	gLen := binary.BigEndian.Uint16(data[offset : offset+2])
+	if len(data) < offset+2+int(gLen)+2 {
+		return errors.New("data too short for group/member length")
+	}
+	m.Group = string(data[offset+2 : offset+2+int(gLen)])
+
+	// Read MemberID
+	offset += 2 + int(gLen)
+	mLen := binary.BigEndian.Uint16(data[offset : offset+2])
+	if len(data) < offset+2+int(mLen) {
 		return errors.New("fetch request member id truncated")
 	}
-	m.MemberID = string(data[6 : 6+idLen])
+	m.MemberID = string(data[offset+2 : offset+2+int(mLen)])
+
 	return nil
 }
 

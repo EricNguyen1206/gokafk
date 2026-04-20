@@ -14,10 +14,12 @@ import (
 
 // Broker is the central TCP server that routes messages between producers and consumers.
 type Broker struct {
-	cfg       *config.Config
-	mu        sync.RWMutex
-	topics    map[uint16]*Topic // topicID → Topic
-	producers map[net.Conn]uint16
+	cfg *config.Config
+	mu  sync.RWMutex
+	// TODO: Phase 2 - Change to map[string]*Topic
+	topics map[string]*Topic // topicID → Topic
+	// TODO: Phase 2 - Change value to string (TopicName)
+	producers map[net.Conn]string
 	listener  net.Listener
 	wg        sync.WaitGroup
 }
@@ -26,8 +28,8 @@ type Broker struct {
 func NewBroker(cfg *config.Config) *Broker {
 	return &Broker{
 		cfg:       cfg,
-		topics:    make(map[uint16]*Topic),
-		producers: make(map[net.Conn]uint16),
+		topics:    make(map[string]*Topic),
+		producers: make(map[net.Conn]string),
 	}
 }
 
@@ -116,9 +118,9 @@ func (b *Broker) handleConnection(ctx context.Context, conn net.Conn) {
 	}
 }
 
-func (b *Broker) getOrCreateTopic(topicID uint16) (*Topic, error) {
+func (b *Broker) getOrCreateTopic(topic string) (*Topic, error) {
 	b.mu.RLock()
-	tp, ok := b.topics[topicID]
+	tp, ok := b.topics[topic]
 	b.mu.RUnlock()
 
 	if ok {
@@ -129,15 +131,15 @@ func (b *Broker) getOrCreateTopic(topicID uint16) (*Topic, error) {
 	defer b.mu.Unlock()
 
 	// Double-check after acquiring write lock
-	if tp, ok := b.topics[topicID]; ok {
+	if tp, ok := b.topics[topic]; ok {
 		return tp, nil
 	}
 
-	tp, err := NewTopic(topicID, b.cfg.DataDir, b.cfg.NumPartitions)
+	tp, err := NewTopic(topic, b.cfg.DataDir, b.cfg.NumPartitions)
 	if err != nil {
 		return nil, err
 	}
-	b.topics[topicID] = tp
+	b.topics[topic] = tp
 	return tp, nil
 }
 

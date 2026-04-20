@@ -6,8 +6,8 @@ import (
 
 func TestProducerRegisterMessage_RoundTrip(t *testing.T) {
 	orig := ProducerRegisterMessage{
-		Port:    8080,
-		TopicID: 42,
+		Port:  8080,
+		Topic: "news",
 	}
 
 	data := orig.Marshal()
@@ -38,9 +38,9 @@ func TestProducerRegisterMessage_UnmarshalTooShort(t *testing.T) {
 
 func TestConsumerRegisterMessage_RoundTrip(t *testing.T) {
 	orig := ConsumerRegisterMessage{
-		Port:    8080,
-		GroupID: 42,
-		TopicID: 100,
+		Port:  8080,
+		Group: "app-group",
+		Topic: "news",
 	}
 
 	data := orig.Marshal()

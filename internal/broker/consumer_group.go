@@ -9,7 +9,7 @@ import (
 
 type ConsumerGroup struct {
 	mu          sync.RWMutex
-	groupID     uint16
+	group       string
 	members     map[string]*GroupMember // memberID -> member
 	assignments map[string][]int        // memberID -> partition IDs
 	offsets     map[int]int64           // partitionID -> committed offset
@@ -21,9 +21,9 @@ type GroupMember struct {
 	joinedAt time.Time
 }
 
-func NewConsumerGroup(groupID uint16) *ConsumerGroup {
+func NewConsumerGroup(groupName string) *ConsumerGroup {
 	return &ConsumerGroup{
-		groupID:     groupID,
+		group:       groupName,
 		members:     make(map[string]*GroupMember),
 		assignments: make(map[string][]int),
 		offsets:     make(map[int]int64),

@@ -62,7 +62,7 @@ func TestIntegration_ProduceAndFetch(t *testing.T) {
 	prodCodec := dialBroker(t, cfg)
 
 	// Register producer
-	regPayload := (&protocol.ProducerRegisterMessage{Port: 8000, TopicID: 1}).Marshal()
+	regPayload := (&protocol.ProducerRegisterMessage{Port: 8000, Topic: "topic-1"}).Marshal()
 	err := prodCodec.WriteMessage(ctx, &protocol.Message{Type: protocol.TypePReg, CorrID: 1, Payload: regPayload})
 	if err != nil {
 		t.Fatalf("producer register: %v", err)
@@ -79,7 +79,7 @@ func TestIntegration_ProduceAndFetch(t *testing.T) {
 		{"user-1", "msg-3"}, // same key as first — same partition
 	}
 	for i, m := range messages {
-		prodMsg := protocol.ProduceMessage{TopicID: 1, Key: []byte(m.key), Value: []byte(m.value)}
+		prodMsg := protocol.ProduceMessage{Topic: "topic-1", Key: []byte(m.key), Value: []byte(m.value)}
 		err := prodCodec.WriteMessage(ctx, &protocol.Message{
 			Type: protocol.TypeProduce, CorrID: uint32(i + 2), Payload: prodMsg.Marshal(),
 		})
@@ -96,7 +96,7 @@ func TestIntegration_ProduceAndFetch(t *testing.T) {
 	consCodec := dialBroker(t, cfg)
 
 	// Register consumer
-	cRegPayload := (&protocol.ConsumerRegisterMessage{Port: 0, GroupID: 1, TopicID: 1}).Marshal()
+	cRegPayload := (&protocol.ConsumerRegisterMessage{Port: 0, Group: "group-1", Topic: "topic-1"}).Marshal()
 	err = consCodec.WriteMessage(ctx, &protocol.Message{Type: protocol.TypeCReg, CorrID: 100, Payload: cRegPayload})
 	if err != nil {
 		t.Fatalf("consumer register: %v", err)
@@ -110,7 +110,7 @@ func TestIntegration_ProduceAndFetch(t *testing.T) {
 	// Fetch messages
 	fetched := 0
 	for i := 0; i < 10; i++ {
-		fetchReq := (&protocol.FetchRequest{TopicID: 1, GroupID: 1, MemberID: memberID}).Marshal()
+		fetchReq := (&protocol.FetchRequest{Topic: "topic-1", Group: "group-1", MemberID: memberID}).Marshal()
 		err := consCodec.WriteMessage(ctx, &protocol.Message{Type: protocol.TypeFetch, CorrID: uint32(200 + i), Payload: fetchReq})
 		if err != nil {
 			t.Fatalf("fetch[%d]: %v", i, err)
@@ -143,7 +143,7 @@ func TestIntegration_SameKeyGoesToSamePartition(t *testing.T) {
 	prodCodec := dialBroker(t, cfg)
 
 	// Register
-	regPayload := (&protocol.ProducerRegisterMessage{Port: 8000, TopicID: 1}).Marshal()
+	regPayload := (&protocol.ProducerRegisterMessage{Port: 8000, Topic: "topic-1"}).Marshal()
 	prodCodec.WriteMessage(ctx, &protocol.Message{Type: protocol.TypePReg, CorrID: 1, Payload: regPayload})
 	prodCodec.ReadMessage(ctx) // consume response
 
@@ -151,7 +151,7 @@ func TestIntegration_SameKeyGoesToSamePartition(t *testing.T) {
 	key := "deterministic-key"
 	for i := 0; i < 10; i++ {
 		prodMsg := protocol.ProduceMessage{
-			TopicID: 1,
+			Topic: "topic-1",
 			Key:     []byte(key),
 			Value:   []byte(fmt.Sprintf("msg-%d", i)),
 		}
@@ -163,14 +163,14 @@ func TestIntegration_SameKeyGoesToSamePartition(t *testing.T) {
 
 	// All 10 should be in same partition → consumer gets them in order
 	consCodec := dialBroker(t, cfg)
-	cRegPayload := (&protocol.ConsumerRegisterMessage{Port: 0, GroupID: 1, TopicID: 1}).Marshal()
+	cRegPayload := (&protocol.ConsumerRegisterMessage{Port: 0, Group: "group-1", Topic: "topic-1"}).Marshal()
 	consCodec.WriteMessage(ctx, &protocol.Message{Type: protocol.TypeCReg, CorrID: 100, Payload: cRegPayload})
 	cResp, _ := consCodec.ReadMessage(ctx)
 	memberID := string(cResp.Payload)
 
 	var prevPartition int32 = -1
 	for i := 0; i < 10; i++ {
-		fetchReq := (&protocol.FetchRequest{TopicID: 1, GroupID: 1, MemberID: memberID}).Marshal()
+		fetchReq := (&protocol.FetchRequest{Topic: "topic-1", Group: "group-1", MemberID: memberID}).Marshal()
 		consCodec.WriteMessage(ctx, &protocol.Message{Type: protocol.TypeFetch, CorrID: uint32(200 + i), Payload: fetchReq})
 		fetchResp, _ := consCodec.ReadMessage(ctx)
 

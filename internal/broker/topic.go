@@ -12,17 +12,16 @@ import (
 // Topic manages partitions and consumer groups for a single topic.
 type Topic struct {
 	mu         sync.RWMutex
-	topicID    uint16
+	topic      string
 	partitions []*Partition
 	numParts   int
 	rrCounter  uint64 // atomic counter for round-robin
-	consumers  map[uint16]*ConsumerGroup
+	consumers  map[string]*ConsumerGroup
 }
 
 // NewTopic creates a new topic with the specified number of partitions.
-func NewTopic(topicID uint16, dataDir string, numPartitions int) (*Topic, error) {
+func NewTopic(topicName string, dataDir string, numPartitions int) (*Topic, error) {
 	partitions := make([]*Partition, numPartitions)
-	topicName := fmt.Sprintf("topic_%d", topicID)
 
 	for i := 0; i < numPartitions; i++ {
 		p, err := NewPartition(i, topicName, dataDir)
@@ -31,16 +30,16 @@ func NewTopic(topicID uint16, dataDir string, numPartitions int) (*Topic, error)
 			for j := 0; j < i; j++ {
 				partitions[j].Close()
 			}
-			return nil, fmt.Errorf("new topic %d partition %d: %w", topicID, i, err)
+			return nil, fmt.Errorf("new topic %s partition %d: %w", topicName, i, err)
 		}
 		partitions[i] = p
 	}
 
 	return &Topic{
-		topicID:    topicID,
+		topic:      topicName,
 		partitions: partitions,
 		numParts:   numPartitions,
-		consumers:  make(map[uint16]*ConsumerGroup),
+		consumers:  make(map[string]*ConsumerGroup),
 	}, nil
 }
 
@@ -80,14 +79,14 @@ func (t *Topic) Append(key, value []byte) (partitionID int, offset int64, err er
 }
 
 // GetOrCreateConsumerGroup returns existing or creates new consumer group.
-func (t *Topic) GetOrCreateConsumerGroup(groupID uint16) *ConsumerGroup {
+func (t *Topic) GetOrCreateConsumerGroup(groupName string) *ConsumerGroup {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	cg, ok := t.consumers[groupID]
+	cg, ok := t.consumers[groupName]
 	if !ok {
-		cg = NewConsumerGroup(groupID)
-		t.consumers[groupID] = cg
+		cg = NewConsumerGroup(groupName)
+		t.consumers[groupName] = cg
 	}
 	return cg
 }

@@ -17,7 +17,7 @@ func testConfig() *config.Config {
 
 func TestTopic_PartitionForKey_Deterministic(t *testing.T) {
 	dir := t.TempDir()
-	tp, err := NewTopic(1, dir, 3)
+	tp, err := NewTopic("topic-1", dir, 3)
 	if err != nil {
 		t.Fatalf("NewTopic: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestTopic_PartitionForKey_Deterministic(t *testing.T) {
 
 func TestTopic_PartitionForKey_Distribution(t *testing.T) {
 	dir := t.TempDir()
-	tp, err := NewTopic(1, dir, 3)
+	tp, err := NewTopic("topic-1", dir, 3)
 	if err != nil {
 		t.Fatalf("NewTopic: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestTopic_PartitionForKey_Distribution(t *testing.T) {
 
 func TestTopic_PartitionForNilKey_RoundRobin(t *testing.T) {
 	dir := t.TempDir()
-	tp, err := NewTopic(1, dir, 3)
+	tp, err := NewTopic("topic-1", dir, 3)
 	if err != nil {
 		t.Fatalf("NewTopic: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestTopic_PartitionForNilKey_RoundRobin(t *testing.T) {
 
 func TestTopic_AppendToPartition(t *testing.T) {
 	dir := t.TempDir()
-	tp, err := NewTopic(1, dir, 3)
+	tp, err := NewTopic("topic-1", dir, 3)
 	if err != nil {
 		t.Fatalf("NewTopic: %v", err)
 	}

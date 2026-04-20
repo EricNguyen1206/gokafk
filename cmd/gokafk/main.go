@@ -55,40 +55,32 @@ func runServer(ctx context.Context, cfg *config.Config) error {
 
 func runProducer(ctx context.Context, cfg *config.Config) error {
 	if len(os.Args) < 4 {
-		return fmt.Errorf("usage: gokafk producer <port> <topicID> [key]")
+		return fmt.Errorf("usage: gokafk producer <port> <topic> [key]")
 	}
 	port, err := strconv.ParseUint(os.Args[2], 10, 16)
 	if err != nil {
 		return err
 	}
-	topicID, err := strconv.ParseUint(os.Args[3], 10, 16)
-	if err != nil {
-		return err
-	}
+	topic := os.Args[3]
 	var key string
 	if len(os.Args) >= 5 {
 		key = os.Args[4]
 	}
 	slog.Info("Trying to start producer processes")
-	return producer.Start(ctx, cfg, uint16(port), uint16(topicID), key)
+	return producer.Start(ctx, cfg, uint16(port), topic, key)
 }
 
 func runConsumer(ctx context.Context, cfg *config.Config) error {
 	if len(os.Args) < 5 {
-		return fmt.Errorf("usage: gokafk consumer <port> <topicID> <groupID>")
+		return fmt.Errorf("usage: gokafk consumer <port> <topic> <group>")
 	}
 	port, err := strconv.ParseUint(os.Args[2], 10, 16)
 	if err != nil {
 		return err
 	}
-	topicID, err := strconv.ParseUint(os.Args[3], 10, 16)
-	if err != nil {
-		return err
-	}
-	groupID, err := strconv.ParseUint(os.Args[4], 10, 16)
-	if err != nil {
-		return err
-	}
+	topic := os.Args[3]
+	group := os.Args[4]
+
 	slog.Info("Trying to start consumer processes")
-	return consumer.Start(ctx, cfg, uint16(port), uint16(topicID), uint16(groupID))
+	return consumer.Start(ctx, cfg, uint16(port), topic, group)
 }
