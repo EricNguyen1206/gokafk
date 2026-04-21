@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"gokafk/internal/config"
-	"gokafk/internal/protocol"
+	"gokafk/pkg/protocol"
 )
 
 func freePort(t *testing.T) int {

@@ -7,7 +7,7 @@ import (
 	"net"
 
 	"gokafk/internal/config"
-	"gokafk/internal/protocol"
+	"gokafk/pkg/protocol"
 )
 
 type Producer struct {

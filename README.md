@@ -126,11 +126,17 @@ go run cmd/gokafk/main.go consumer 0 1 1
 ```
 gokafk/
 ├── cmd/gokafk/main.go          # Entry point (server | producer | consumer)
+├── pkg/
+│   ├── client/                 # Public SDK Consumer/Producer TCP client
+│   └── protocol/               # Binary codec (Marshal/Unmarshal, CRC32 verification)
 ├── internal/
 │   ├── broker/                 # TCP server, grouping, partition & topic controllers
-│   ├── config/                 # Default configurations and environments 
-│   ├── consumer/               # Consumer TCP client & pull worker
-│   ├── producer/               # Producer TCP client & ingestion worker
-│   ├── protocol/               # Binary codec (Marshal/Unmarshal, CRC32 verification)
+│   ├── config/                 # Default configurations and environments
+│   ├── cli/                    # CLI logic for producer and consumer commands
 │   └── storage/                # Disk storage layer (Segment, Sparse Index)
 ```
+
+## Readmore
+
+> [Wiki](https://gistcdn.githack.com/EricNguyen1206/b0b6e2e1a979d2fe9737793e9fc0a1db/raw/index.html)
+

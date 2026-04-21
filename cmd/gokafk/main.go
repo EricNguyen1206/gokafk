@@ -11,8 +11,8 @@ import (
 
 	"gokafk/internal/broker"
 	"gokafk/internal/config"
-	"gokafk/internal/consumer"
-	"gokafk/internal/producer"
+	"gokafk/internal/cli/consumer"
+	"gokafk/internal/cli/producer"
 )
 
 func main() {

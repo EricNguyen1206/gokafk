@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"gokafk/internal/config"
-	"gokafk/internal/protocol"
+	"gokafk/pkg/protocol"
 )
 
 type Consumer struct {

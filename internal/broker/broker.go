@@ -9,16 +9,14 @@ import (
 	"sync"
 
 	"gokafk/internal/config"
-	"gokafk/internal/protocol"
+	"gokafk/pkg/protocol"
 )
 
 // Broker is the central TCP server that routes messages between producers and consumers.
 type Broker struct {
-	cfg *config.Config
-	mu  sync.RWMutex
-	// TODO: Phase 2 - Change to map[string]*Topic
-	topics map[string]*Topic // topicID → Topic
-	// TODO: Phase 2 - Change value to string (TopicName)
+	cfg       *config.Config
+	mu        sync.RWMutex
+	topics    map[string]*Topic // topicID → Topic
 	producers map[net.Conn]string
 	listener  net.Listener
 	wg        sync.WaitGroup

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net"
 
-	"gokafk/internal/protocol"
+	"gokafk/pkg/protocol"
 )
 
 func (b *Broker) routeMessage(ctx context.Context, msg *protocol.Message, conn net.Conn) (*protocol.Message, error) {
