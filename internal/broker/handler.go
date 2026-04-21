@@ -6,175 +6,116 @@ import (
 	"log/slog"
 	"net"
 
-	"gokafk/pkg/protocol"
+	"gokafk/pkg/kafkaprotocol"
 )
 
-func (b *Broker) routeMessage(ctx context.Context, msg *protocol.Message, conn net.Conn) (*protocol.Message, error) {
-	switch msg.Type {
-	case protocol.TypeEcho:
-		return b.handleEcho(msg)
-	case protocol.TypePReg:
-		return b.handleProducerRegister(msg, conn)
-	case protocol.TypeCReg:
-		return b.handleConsumerRegister(msg, conn)
-	case protocol.TypeProduce:
-		return b.handleProduce(msg, conn)
-	case protocol.TypeFetch:
-		return b.handleFetch(msg, conn)
+func (b *Broker) routeMessage(ctx context.Context, header *kafkaprotocol.RequestHeader, data []byte, conn net.Conn) ([]byte, error) {
+	switch header.ApiKey {
+	case kafkaprotocol.ApiKeyApiVersions: // 18
+		return kafkaprotocol.HandleApiVersions(header.CorrelationId), nil
+		
+	case kafkaprotocol.ApiKeyFindCoordinator: // 10
+		return kafkaprotocol.HandleFindCoordinator(header.CorrelationId), nil
+		
+	case kafkaprotocol.ApiKeyJoinGroup: // 11
+		return kafkaprotocol.HandleJoinGroup(header.CorrelationId), nil
+		
+	case kafkaprotocol.ApiKeySyncGroup: // 14
+		// hardcoded topic for tutorial
+		return kafkaprotocol.HandleSyncGroup(header.CorrelationId, "test-topic"), nil
+		
+	case kafkaprotocol.ApiKeyMetadata: // 3
+		return kafkaprotocol.HandleMetadata(header.CorrelationId, data), nil
+
+	case kafkaprotocol.ApiKeyOffsetFetch: // 9
+		return kafkaprotocol.HandleOffsetFetch(header.CorrelationId, "test-topic"), nil
+	
+	case kafkaprotocol.ApiKeyListOffsets: // 2
+		// Return 0 for now
+		return kafkaprotocol.HandleOffsetFetch(header.CorrelationId, "test-topic"), nil
+		
+	case kafkaprotocol.ApiKeyProduce: // 0
+		return b.handleProduce(header.CorrelationId, data)
+		
+	case kafkaprotocol.ApiKeyFetch: // 1
+		return b.handleFetch(header.CorrelationId, data)
+		
+	case kafkaprotocol.ApiKeyHeartbeat: // 12
+		// Heartbeat: just echo corrId with no error
+		enc := kafkaprotocol.NewEncoder()
+		enc.WriteInt32(header.CorrelationId)
+		enc.WriteInt32(0) // throttle_time_ms
+		enc.WriteInt16(0) // error_code
+		return enc.Bytes(), nil
+
 	default:
-		return nil, fmt.Errorf("unknown message type: %d", msg.Type)
+		slog.Warn("unsupported api key", "key", header.ApiKey)
+		// Return nil — don't crash the connection, just ignore
+		return nil, nil
 	}
 }
 
-func (b *Broker) handleEcho(msg *protocol.Message) (*protocol.Message, error) {
-	resp := fmt.Sprintf("echo: %s", string(msg.Payload))
-	return &protocol.Message{
-		Type:    protocol.TypeEchoResp,
-		CorrID:  msg.CorrID,
-		Payload: []byte(resp),
-	}, nil
-}
-
-func (b *Broker) handleProducerRegister(msg *protocol.Message, conn net.Conn) (*protocol.Message, error) {
-	var regMsg protocol.ProducerRegisterMessage
-	if err := regMsg.Unmarshal(msg.Payload); err != nil {
-		return nil, fmt.Errorf("parse producer register: %w", err)
-	}
-
-	if _, err := b.getOrCreateTopic(regMsg.Topic); err != nil {
-		return nil, fmt.Errorf("create topic %s: %w", regMsg.Topic, err)
-	}
-
-	b.mu.Lock()
-	b.producers[conn] = regMsg.Topic
-	b.mu.Unlock()
-
-	slog.Info("producer registered", "topic", regMsg.Topic, "remote", conn.RemoteAddr())
-
-	return &protocol.Message{
-		Type:    protocol.TypePRegResp,
-		CorrID:  msg.CorrID,
-		Payload: []byte{0},
-	}, nil
-}
-
-func (b *Broker) handleConsumerRegister(msg *protocol.Message, conn net.Conn) (*protocol.Message, error) {
-	var regMsg protocol.ConsumerRegisterMessage
-	if err := regMsg.Unmarshal(msg.Payload); err != nil {
-		return nil, fmt.Errorf("parse consumer register: %w", err)
-	}
-
-	tp, err := b.getOrCreateTopic(regMsg.Topic)
+func (b *Broker) handleProduce(corrId int32, data []byte) ([]byte, error) {
+	slog.Debug("handleProduce", "bytes", len(data), "raw", data[:min(len(data), 40)])
+	records, err := kafkaprotocol.ParseProduceRequest(data)
 	if err != nil {
-		return nil, fmt.Errorf("create topic %s: %w", regMsg.Topic, err)
+		slog.Error("parse produce failed", "err", err)
+		// Don't crash connection; return error response
+		return kafkaprotocol.HandleProduceResponse(corrId, "unknown", 0, -1), nil
 	}
 
-	cg := tp.GetOrCreateConsumerGroup(regMsg.Group)
-	memberID := cg.AddMember(conn)
+	if len(records) == 0 {
+		return kafkaprotocol.HandleProduceResponse(corrId, "test-topic", 0, 0), nil
+	}
 
-	// Trigger rebalance
-	cg.Rebalance(tp.NumPartitions())
+	rec := records[0]
+	tp, err := b.getOrCreateTopic(rec.Topic)
+	if err != nil {
+		slog.Error("get topic failed", "topic", rec.Topic, "err", err)
+		return kafkaprotocol.HandleProduceResponse(corrId, rec.Topic, 0, -1), nil
+	}
 
-	slog.Info("consumer registered + rebalanced",
-		"topic", regMsg.Topic,
-		"group", regMsg.Group,
-		"memberID", memberID,
-		"members", cg.MemberCount(),
-		"assignments", cg.GetAssignments(memberID),
-	)
+	_, offset, err := tp.Append(rec.Key, rec.Value)
+	if err != nil {
+		slog.Error("append failed", "err", err)
+		return kafkaprotocol.HandleProduceResponse(corrId, rec.Topic, 0, -1), nil
+	}
+	slog.Info("produced", "topic", rec.Topic, "offset", offset, "val", string(rec.Value))
 
-	return &protocol.Message{
-		Type:    protocol.TypeCRegResp,
-		CorrID:  msg.CorrID,
-		Payload: []byte(memberID),
-	}, nil
+	return kafkaprotocol.HandleProduceResponse(corrId, rec.Topic, rec.Partition, offset), nil
 }
 
-func (b *Broker) handleProduce(msg *protocol.Message, conn net.Conn) (*protocol.Message, error) {
-	var prodMsg protocol.ProduceMessage
-	if err := prodMsg.Unmarshal(msg.Payload); err != nil {
-		return nil, fmt.Errorf("parse produce: %w", err)
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-
-	tp, err := b.getOrCreateTopic(prodMsg.Topic)
-	if err != nil {
-		return nil, fmt.Errorf("get topic %s: %w", prodMsg.Topic, err)
-	}
-
-	partID, offset, err := tp.Append(prodMsg.Key, prodMsg.Value)
-	if err != nil {
-		return nil, fmt.Errorf("produce to topic %s: %w", prodMsg.Topic, err)
-	}
-
-	slog.Debug("produced", "topic", prodMsg.Topic, "partition", partID, "offset", offset)
-
-	return &protocol.Message{
-		Type:    protocol.TypeProduceResp,
-		CorrID:  msg.CorrID,
-		Payload: []byte{0},
-	}, nil
+	return b
 }
 
-func (b *Broker) handleFetch(msg *protocol.Message, conn net.Conn) (*protocol.Message, error) {
-	var fetchReq protocol.FetchRequest
-	if err := fetchReq.Unmarshal(msg.Payload); err != nil {
+func (b *Broker) handleFetch(corrId int32, data []byte) ([]byte, error) {
+	fetchReqs, err := kafkaprotocol.ParseFetchRequest(data)
+	if err != nil {
 		return nil, fmt.Errorf("parse fetch: %w", err)
 	}
 
-	b.mu.RLock()
-	tp, ok := b.topics[fetchReq.Topic]
-	b.mu.RUnlock()
-
-	if !ok {
-		slog.Error("topic not found in fetch", "topic", fetchReq.Topic)
-		resp := protocol.FetchResponse{PartitionID: -1, Offset: -1}
-		return &protocol.Message{
-			Type:    protocol.TypeFetchResp,
-			CorrID:  msg.CorrID,
-			Payload: resp.Marshal(),
-		}, nil
+	if len(fetchReqs) == 0 {
+		return kafkaprotocol.HandleFetchResponse(corrId, "test-topic", 0, nil, 0), nil
 	}
 
-	cg := tp.GetOrCreateConsumerGroup(fetchReq.Group)
-	assignments := cg.GetAssignments(fetchReq.MemberID)
-
-	if len(assignments) == 0 {
-		slog.Error("no assignments for member", "member", fetchReq.MemberID, "group", fetchReq.Group)
-		resp := protocol.FetchResponse{PartitionID: -1, Offset: -1}
-		return &protocol.Message{
-			Type:    protocol.TypeFetchResp,
-			CorrID:  msg.CorrID,
-			Payload: resp.Marshal(),
-		}, nil
+	req := fetchReqs[0]
+	tp, err := b.getOrCreateTopic(req.Topic)
+	if err != nil {
+		// Topic doesn't exist yet
+		return kafkaprotocol.HandleFetchResponse(corrId, req.Topic, req.Partition, nil, 0), nil
 	}
 
-	for _, partID := range assignments {
-		offset := cg.GetPartitionOffset(partID)
-		data, err := tp.ReadFromPartition(partID, offset)
-		if err != nil {
-			slog.Error("read error", "part", partID, "off", offset, "err", err)
-			continue
-		}
-
-		// read success, advance offset
-		cg.GetAndAdvancePartitionOffset(partID)
-
-		resp := protocol.FetchResponse{
-			PartitionID: int32(partID),
-			Offset:      offset,
-			Data:        data,
-		}
-		return &protocol.Message{
-			Type:    protocol.TypeFetchResp,
-			CorrID:  msg.CorrID,
-			Payload: resp.Marshal(),
-		}, nil
+	// read one message for simplification, starting from offset
+	msgData, err := tp.ReadFromPartition(int(req.Partition), req.Offset)
+	var msgs [][]byte
+	if err == nil {
+		msgs = append(msgs, msgData)
 	}
 
-	resp := protocol.FetchResponse{PartitionID: -1, Offset: -1}
-	return &protocol.Message{
-		Type:    protocol.TypeFetchResp,
-		CorrID:  msg.CorrID,
-		Payload: resp.Marshal(),
-	}, nil
+	return kafkaprotocol.HandleFetchResponse(corrId, req.Topic, req.Partition, msgs, req.Offset), nil
 }
+

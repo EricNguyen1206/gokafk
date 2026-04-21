@@ -1,0 +1,14 @@
+{
+  "name": "gokafk-kafkajs-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "jest --forceExit --verbose"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

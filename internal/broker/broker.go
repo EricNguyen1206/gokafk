@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"gokafk/internal/config"
-	"gokafk/pkg/protocol"
+	"gokafk/pkg/kafkaprotocol"
 )
 
 // Broker is the central TCP server that routes messages between producers and consumers.
@@ -84,7 +84,7 @@ func (b *Broker) handleConnection(ctx context.Context, conn net.Conn) {
 	defer b.cleanupConnection(conn)
 
 	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	codec := protocol.NewCodec(rw)
+	codec := kafkaprotocol.NewCodec(rw)
 
 	slog.Info("new connection", "remote", conn.RemoteAddr())
 
@@ -95,20 +95,20 @@ func (b *Broker) handleConnection(ctx context.Context, conn net.Conn) {
 		default:
 		}
 
-		msg, err := codec.ReadMessage(ctx)
+		header, data, err := codec.ReadRequest(ctx)
 		if err != nil {
-			slog.Debug("connection read error", "remote", conn.RemoteAddr(), "err", err)
+			// eof or read error
 			return
 		}
 
-		resp, err := b.routeMessage(ctx, msg, conn)
+		resp, err := b.routeMessage(ctx, header, data, conn)
 		if err != nil {
-			slog.Error("message handling error", "type", msg.Type, "err", err)
+			slog.Error("message handling error", "err", err)
 			return
 		}
 
 		if resp != nil {
-			if err := codec.WriteMessage(ctx, resp); err != nil {
+			if err := codec.WriteResponse(resp); err != nil {
 				slog.Error("response write error", "err", err)
 				return
 			}
