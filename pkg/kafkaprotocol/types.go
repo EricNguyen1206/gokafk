@@ -1,5 +1,6 @@
 package kafkaprotocol
 
+// Reference: https://kafka.apache.org/protocol.html#protocol_api_keys
 const (
 	ApiKeyProduce         int16 = 0
 	ApiKeyFetch           int16 = 1
@@ -13,4 +14,5 @@ const (
 	ApiKeyLeaveGroup      int16 = 13
 	ApiKeySyncGroup       int16 = 14
 	ApiKeyApiVersions     int16 = 18
+	// TODO: implement other api keys later
 )

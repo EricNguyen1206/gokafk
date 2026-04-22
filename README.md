@@ -138,5 +138,5 @@ gokafk/
 
 ## Readmore
 
-> [Wiki](https://gistcdn.githack.com/EricNguyen1206/b0b6e2e1a979d2fe9737793e9fc0a1db/raw/index.html)
+> [Wiki](https://gistcdn.githack.com/EricNguyen1206/e6395e9b4b6323f2125312dd8e80d60b/raw/index.html)
 

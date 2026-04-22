@@ -16,8 +16,8 @@ import (
 type Broker struct {
 	cfg       *config.Config
 	mu        sync.RWMutex
-	topics    map[string]*Topic // topicID → Topic
-	producers map[net.Conn]string
+	topics    map[string]*Topic   // topicID → Topic
+	producers map[net.Conn]string // client connection → client id
 	listener  net.Listener
 	wg        sync.WaitGroup
 }
