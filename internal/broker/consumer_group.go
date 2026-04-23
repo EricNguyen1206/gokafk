@@ -123,3 +123,18 @@ func (cg *ConsumerGroup) GetPartitionOffset(partID int) int64 {
 	defer cg.mu.RUnlock()
 	return cg.offsets[partID]
 }
+
+func (cg *ConsumerGroup) CommitPartitionOffset(partID int, offset int64) {
+	cg.mu.Lock()
+	defer cg.mu.Unlock()
+	// Only move offset forward
+	if offset > cg.offsets[partID] {
+		cg.offsets[partID] = offset
+	}
+}
+
+func (cg *ConsumerGroup) SetRecoveredOffset(partID int, offset int64) {
+	cg.mu.Lock()
+	defer cg.mu.Unlock()
+	cg.offsets[partID] = offset
+}

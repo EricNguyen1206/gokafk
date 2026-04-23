@@ -1,9 +1,9 @@
 package kafkaprotocol
 
 // HandleJoinGroup mocks a successful JoinGroup response where the member becomes the leader.
-func HandleJoinGroup(corrId int32) []byte {
+func HandleJoinGroup(correlationId int32) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(corrId)
+	enc.WriteInt32(correlationId)
 
 	enc.WriteInt32(0) // throttle_time_ms
 	enc.WriteInt16(0) // ErrorCode = 0
@@ -34,10 +34,10 @@ func HandleJoinGroup(corrId int32) []byte {
 	return enc.Bytes()
 }
 
-// HandleSyncGroup mocks a successful SyncGroup response with Partition 0 assigned.
-func HandleSyncGroup(corrId int32, topic string) []byte {
+// Message key = 9; HandleSyncGroup mocks a successful SyncGroup response with Partition 0 assigned.
+func HandleSyncGroup(correlationId int32, topic string) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(corrId)
+	enc.WriteInt32(correlationId)
 
 	enc.WriteInt32(0) // throttle_time_ms
 	enc.WriteInt16(0) // ErrorCode = 0
@@ -67,24 +67,24 @@ func HandleSyncGroup(corrId int32, topic string) []byte {
 	return enc.Bytes()
 }
 
-// HandleOffsetFetch mocks a successful OffsetFetch response.
-func HandleOffsetFetch(corrId int32, topic string) []byte {
+// HandleOffsetFetchResponse returns a successful OffsetFetch response with dynamic offset.
+func HandleOffsetFetchResponse(correlationId int32, topic string, partition int32, offset int64) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(corrId)
+	enc.WriteInt32(correlationId)
 	enc.WriteInt32(0) // throttle
 
-	enc.WriteInt32(1) // 1 topic
+	enc.WriteInt32(1) // Length of Topics Array = 1
 	topicName := topic
 	if topicName == "" {
 		topicName = "test-topic"
 	}
 	enc.WriteString(topicName)
-	enc.WriteInt32(1) // 1 partition
-	enc.WriteInt32(0) // Request Partition 0
-	enc.WriteInt64(0) // Offset 0
-	enc.WriteInt32(-1) // Leader Epoch
+	enc.WriteInt32(1)   // Length of Partitions Array = 1
+	enc.WriteInt32(partition)   // Request Partition
+	enc.WriteInt64(offset)      // Current Offset
+	enc.WriteInt32(-1)  // Leader Epoch
 	enc.WriteString("") // Metadata
-	enc.WriteInt16(0) // ErrorCode
+	enc.WriteInt16(0)   // ErrorCode
 
 	enc.WriteInt16(0) // Top level ErrorCode
 

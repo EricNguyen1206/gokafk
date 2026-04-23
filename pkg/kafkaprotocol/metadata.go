@@ -1,7 +1,7 @@
 package kafkaprotocol
 
 // HandleMetadata parses a minimal MetadataRequest and returns a single mocked partition pointing to localhost:10000.
-func HandleMetadata(corrId int32, reqData []byte) []byte {
+func HandleMetadata(correlationId int32, reqData []byte) []byte {
 	// Parse requested topics
 	dec := NewDecoder(reqData)
 	numTopics, _ := dec.ReadInt32()
@@ -12,7 +12,7 @@ func HandleMetadata(corrId int32, reqData []byte) []byte {
 	}
 
 	enc := NewEncoder()
-	enc.WriteInt32(corrId)
+	enc.WriteInt32(correlationId)
 
 	enc.WriteInt32(0) // throttle_time_ms
 

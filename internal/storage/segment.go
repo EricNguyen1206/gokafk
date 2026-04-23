@@ -1,8 +1,7 @@
 package storage
 
 import (
-	"bufio"
-	"bytes"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"os"
@@ -50,20 +49,38 @@ func NewSegment(dir string, topicId uint16) (*Segment, error) {
 	return seg, nil
 }
 
-// rebuildIndex scans the log file line-by-line to reconstruct the in-memory index of segment.
 func (s *Segment) rebuildIndex() error {
 	if _, err := s.file.Seek(0, 0); err != nil {
 		return err
 	}
 
-	scanner := bufio.NewScanner(s.file)
 	var bytePos int64 = 0
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		s.index[s.offset] = bytePos
-		// +1 for the newline character
-		bytePos += int64(len(line)) + 1
-		s.offset++
+	headerBuf := make([]byte, 12) // 8 bytes Offset + 4 bytes Size
+
+	for {
+		// Read header
+		n, err := s.file.Read(headerBuf)
+		if n == 0 || err != nil {
+			break // EOF or error
+		}
+		if n < 12 {
+			break // corrupted file, stop rebuilding
+		}
+
+		// Parse header
+		offset := int64(binary.BigEndian.Uint64(headerBuf[0:8]))
+		size := int32(binary.BigEndian.Uint32(headerBuf[8:12]))
+
+		// Update index
+		s.index[offset] = bytePos
+
+		// Jump over payload to the next frame
+		bytePos += int64(12) + int64(size)
+		if _, err := s.file.Seek(bytePos, 0); err != nil {
+			break
+		}
+
+		s.offset = offset + 1
 	}
 
 	s.bytePos = bytePos
@@ -85,16 +102,20 @@ func (s *Segment) Append(data []byte) (int64, error) {
 		return -1, fmt.Errorf("segment closed")
 	}
 
-	cleanData := bytes.TrimSpace(data)
-	line := append(cleanData, '\n')
+	offset := s.offset
 
-	n, err := s.file.Write(line)
+	// Build binary frame: [Offset: 8 bytes][Size: 4 bytes][Payload]
+	size := len(data)
+	frame := make([]byte, 12+size)
+	binary.BigEndian.PutUint64(frame[0:8], uint64(offset))
+	binary.BigEndian.PutUint32(frame[8:12], uint32(size))
+	copy(frame[12:], data)
 
+	n, err := s.file.Write(frame)
 	if err != nil {
 		return -1, fmt.Errorf("segment append: %w", err)
 	}
 
-	offset := s.offset
 	s.index[offset] = s.bytePos
 	s.bytePos += int64(n)
 	s.offset++
@@ -124,12 +145,18 @@ func (s *Segment) Read(offset int64) ([]byte, error) {
 		return nil, fmt.Errorf("segment read seek: %w", err)
 	}
 
-	scanner := bufio.NewScanner(readFile)
-	if !scanner.Scan() {
-		return nil, fmt.Errorf("segment scan: %w", scanner.Err())
+	headerBuf := make([]byte, 12) // 8 bytes Offset + 4 bytes Size
+	if _, err := readFile.Read(headerBuf); err != nil {
+		return nil, fmt.Errorf("segment read header: %w", err)
 	}
 
-	return scanner.Bytes(), nil
+	size := int32(binary.BigEndian.Uint32(headerBuf[8:12]))
+	payload := make([]byte, size)
+	if _, err := readFile.Read(payload); err != nil {
+		return nil, fmt.Errorf("segment read payload: %w", err)
+	}
+
+	return payload, nil
 }
 
 // return the next offset that will be assigned to the next message

@@ -39,6 +39,11 @@ func (b *Broker) Start(ctx context.Context) error {
 	}
 	b.listener = ln
 
+	// Recover offsets from internal topic
+	if err := b.recoverConsumerOffsets(); err != nil {
+		return fmt.Errorf("failed to recover consumer offsets: %w", err)
+	}
+
 	// Shutdown goroutine
 	go func() {
 		<-ctx.Done()

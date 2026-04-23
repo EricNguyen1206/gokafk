@@ -53,7 +53,7 @@ func (c *KafkaCodec) ReadRequest(ctx context.Context) (*RequestHeader, []byte, e
 		return nil, nil, err
 	}
 
-	corrId, err := decoder.ReadInt32()
+	correlationId, err := decoder.ReadInt32()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -68,7 +68,7 @@ func (c *KafkaCodec) ReadRequest(ctx context.Context) (*RequestHeader, []byte, e
 		Size:          size,
 		ApiKey:        apiKey,
 		ApiVersion:    apiVersion,
-		CorrelationId: corrId,
+		CorrelationId: correlationId,
 		ClientId:      clientId,
 	}
 

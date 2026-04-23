@@ -39,19 +39,15 @@ func ParseProduceRequest(reqData []byte) ([]ProduceRecord, error) {
 				continue
 			}
 
-			// We will do a very naive parse of the RecordBatch, assuming one record per batch for the sake of the test.
-			// Kafka RecordBatch format (v2): BaseOffset(8), Length(4), PartitionLeaderEpoch(4), Magic(1), CRC(4),
-			// Attributes(2), LastOffsetDelta(4), FirstTimestamp(8), MaxTimestamp(8), ProducerId(8), ProducerEpoch(2), BaseSequence(4),
-			// RecordsArrayLength(4).
-			
-			// To keep our hand-rolled parser simple for the tutorial, we will hack it:
-			// Just pretend the test sends simple V0 Message Sets or we skip 61 bytes of RecordBatch header.
-			// Actually KafkaJS will send modern RecordBatches (Magic=2).
-			// Header size before the records array is 61 bytes.
+			// TODO: Implement proper RecordBatch v2 parsing.
+			// Current implementation is a naive "hack" for the very first version:
+			// - Skips 61 bytes of RecordBatch header (BaseOffset to RecordsArrayLength).
+			// - Assumes one record per batch for testing purposes.
+			// Actually KafkaJS sends modern RecordBatches (Magic=2) which require 61 bytes header skip.
 			if dec.Remaining() < 61 {
 				return nil, fmt.Errorf("batch too small")
 			}
-			dec.pos += 61 
+			dec.pos += 61
 
 			// Records Array
 			numRecs, _ := dec.ReadInt32()
@@ -59,7 +55,7 @@ func ParseProduceRequest(reqData []byte) ([]ProduceRecord, error) {
 				// Record: Length(VarInt), Attributes(VarInt), TimestampDelta(VarInt), OffsetDelta(VarInt),
 				// KeyLength(VarInt), Key, ValueLength(VarInt), Value, HeadersArray(VarInt).
 				// We'll have to parse VarInt.
-				
+
 				_, _ = dec.ReadVarInt() // length
 				_, _ = dec.ReadVarInt() // attr
 				_, _ = dec.ReadVarInt() // ts delta
@@ -101,21 +97,23 @@ func ParseProduceRequest(reqData []byte) ([]ProduceRecord, error) {
 	return records, nil
 }
 
-func HandleProduceResponse(corrId int32, topic string, partition int32, offset int64) []byte {
+// Return encoded response message for ProduceResponse in binary
+// Message format: Correlation ID + Topic + Partition + ErrorCode + BaseOffset + LogAppendTimeMs + LogStartOffset + RecordErrors + ErrorMessage + ThrottleTime
+func HandleProduceResponse(correlationId int32, topic string, partition int32, offset int64) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(corrId)
+	enc.WriteInt32(correlationId) // Correlation ID
 
 	// Responses Array (topics)
 	enc.WriteInt32(1)
 	enc.WriteString(topic)
 
 	// Partitions Array
-	enc.WriteInt32(1)
-	enc.WriteInt32(partition)
-	enc.WriteInt16(0) // ErrorCode
-	enc.WriteInt64(offset) // BaseOffset
-	enc.WriteInt64(-1) // LogAppendTimeMs
-	enc.WriteInt64(0) // LogStartOffset
+	enc.WriteInt32(1)         // Length of Patitions Array = 1
+	enc.WriteInt32(partition) // Partition
+	enc.WriteInt16(0)         // ErrorCode
+	enc.WriteInt64(offset)    // BaseOffset
+	enc.WriteInt64(-1)        // LogAppendTimeMs
+	enc.WriteInt64(0)         // LogStartOffset
 
 	// RecordErrors array (empty)
 	enc.WriteInt32(0)
