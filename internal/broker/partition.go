@@ -7,10 +7,10 @@ import (
 )
 
 type Partition struct {
+	currOffset int64 // must be first field for 64-bit atomic alignment on 32-bit platforms
 	id         int
 	topicName  string
 	store      storage.Store
-	currOffset int64
 }
 
 func NewPartition(id int, topicName string, dataDir string) (*Partition, error) {
@@ -46,6 +46,16 @@ func (p *Partition) Read(offset int64) ([]byte, error) {
 
 func (p *Partition) CurrentOffset() int64 {
 	return atomic.LoadInt64(&p.currOffset)
+}
+
+// TimestampAt returns the timestamp (Unix millis) of the message at the given offset.
+func (p *Partition) TimestampAt(offset int64) (int64, error) {
+	return p.store.TimestampAt(offset)
+}
+
+// FindOffsetByTimestamp returns the first offset whose timestamp >= ts (Unix millis).
+func (p *Partition) FindOffsetByTimestamp(ts int64) (int64, error) {
+	return p.store.FindOffsetByTimestamp(ts)
 }
 
 func (p *Partition) Close() error {

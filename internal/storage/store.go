@@ -16,6 +16,13 @@ type Store interface {
 	// CurrentOffset returns the next offset that will be assigned.
 	CurrentOffset() int64
 
+	// TimestampAt returns the timestamp (Unix millis) of the message at the given offset.
+	TimestampAt(offset int64) (int64, error)
+
+	// FindOffsetByTimestamp returns the first offset whose timestamp >= ts (Unix millis).
+	// Returns -1 if no matching offset is found.
+	FindOffsetByTimestamp(ts int64) (int64, error)
+
 	// Close flushes and closes the underlying storage.
 	Close() error
 }
