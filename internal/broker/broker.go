@@ -16,8 +16,9 @@ import (
 type Broker struct {
 	cfg       *config.Config
 	mu        sync.RWMutex
-	topics    map[string]*Topic   // topicID → Topic
-	producers map[net.Conn]string // client connection → client id
+	topics    map[string]*Topic            // topicID → Topic
+	groups    map[string]*CoordinatedGroup // groupID → group coordinator
+	producers map[net.Conn]string          // client connection → client id
 	listener  net.Listener
 	wg        sync.WaitGroup
 }
@@ -27,6 +28,7 @@ func NewBroker(cfg *config.Config) *Broker {
 	return &Broker{
 		cfg:       cfg,
 		topics:    make(map[string]*Topic),
+		groups:    make(map[string]*CoordinatedGroup),
 		producers: make(map[net.Conn]string),
 	}
 }
