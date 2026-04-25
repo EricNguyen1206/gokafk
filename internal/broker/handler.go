@@ -33,7 +33,7 @@ func (b *Broker) routeMessage(ctx context.Context, header *kafkaprotocol.Request
 		return kafkaprotocol.HandleFindCoordinator(header.CorrelationId), nil
 
 	case kafkaprotocol.ApiKeyJoinGroup: // 11
-		return kafkaprotocol.HandleJoinGroup(header.CorrelationId), nil
+		return b.handleJoinGroup(header.CorrelationId, data)
 
 	case kafkaprotocol.ApiKeyHeartbeat: // 12
 		// Heartbeat: just echo correlationId with no error
@@ -43,9 +43,11 @@ func (b *Broker) routeMessage(ctx context.Context, header *kafkaprotocol.Request
 		enc.WriteInt16(0) // error_code
 		return enc.Bytes(), nil
 
+	case kafkaprotocol.ApiKeyLeaveGroup: // 13
+		return b.handleLeaveGroup(header.CorrelationId, data)
+
 	case kafkaprotocol.ApiKeySyncGroup: // 14
-		// hardcoded topic for tutorial
-		return kafkaprotocol.HandleSyncGroup(header.CorrelationId, "test-topic"), nil
+		return b.handleSyncGroup(header.CorrelationId, data)
 
 	case kafkaprotocol.ApiKeyApiVersions: // 18
 		return kafkaprotocol.HandleApiVersions(header.CorrelationId), nil
