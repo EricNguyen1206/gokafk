@@ -43,3 +43,54 @@ func ParseOffsetFetchRequest(reqData []byte) (string, []OffsetFetchRequestInfo, 
 
 	return groupID, fetchReqs, nil
 }
+
+// OffsetFetchPartitionEntry holds the response data for a single partition in an OffsetFetch response.
+type OffsetFetchPartitionEntry struct {
+	Partition int32
+	Offset    int64  // -1 = no committed offset
+	Metadata  string
+	ErrorCode int16
+}
+
+// OffsetFetchResponseEntry holds the response data for a single topic in an OffsetFetch response.
+type OffsetFetchResponseEntry struct {
+	Topic      string
+	Partitions []OffsetFetchPartitionEntry
+}
+
+// HandleOffsetFetchResponse encodes an OffsetFetch response with multi-topic/multi-partition support.
+// Wire format:
+//
+//	CorrelationId      int32
+//	throttle_time_ms   int32
+//	Topics Array:
+//	  TopicName        string
+//	  Partitions Array:
+//	    PartitionIndex int32
+//	    CommittedOffset int64
+//	    LeaderEpoch    int32
+//	    Metadata       string
+//	    ErrorCode      int16
+//	ErrorCode          int16 (top-level)
+func HandleOffsetFetchResponse(correlationId int32, entries []OffsetFetchResponseEntry) []byte {
+	enc := NewEncoder()
+	enc.WriteInt32(correlationId)
+	enc.WriteInt32(0) // throttle_time_ms
+
+	enc.WriteInt32(int32(len(entries)))
+	for _, entry := range entries {
+		enc.WriteString(entry.Topic)
+		enc.WriteInt32(int32(len(entry.Partitions)))
+		for _, p := range entry.Partitions {
+			enc.WriteInt32(p.Partition) // PartitionIndex
+			enc.WriteInt64(p.Offset)    // CommittedOffset
+			enc.WriteInt32(-1)          // LeaderEpoch
+			enc.WriteString(p.Metadata) // Metadata
+			enc.WriteInt16(p.ErrorCode) // ErrorCode
+		}
+	}
+
+	enc.WriteInt16(0) // Top level ErrorCode
+
+	return enc.Bytes()
+}

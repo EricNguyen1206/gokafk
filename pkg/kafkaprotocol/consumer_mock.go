@@ -66,27 +66,3 @@ func HandleSyncGroup(correlationId int32, topic string) []byte {
 
 	return enc.Bytes()
 }
-
-// HandleOffsetFetchResponse returns a successful OffsetFetch response with dynamic offset.
-func HandleOffsetFetchResponse(correlationId int32, topic string, partition int32, offset int64) []byte {
-	enc := NewEncoder()
-	enc.WriteInt32(correlationId)
-	enc.WriteInt32(0) // throttle
-
-	enc.WriteInt32(1) // Length of Topics Array = 1
-	topicName := topic
-	if topicName == "" {
-		topicName = "test-topic"
-	}
-	enc.WriteString(topicName)
-	enc.WriteInt32(1)   // Length of Partitions Array = 1
-	enc.WriteInt32(partition)   // Request Partition
-	enc.WriteInt64(offset)      // Current Offset
-	enc.WriteInt32(-1)  // Leader Epoch
-	enc.WriteString("") // Metadata
-	enc.WriteInt16(0)   // ErrorCode
-
-	enc.WriteInt16(0) // Top level ErrorCode
-
-	return enc.Bytes()
-}

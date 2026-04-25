@@ -105,6 +105,22 @@ func (t *Topic) PartitionOffset(partitionID int) int64 {
 	return t.partitions[partitionID].CurrentOffset()
 }
 
+// PartitionTimestampAt returns the timestamp of the message at the given offset in a partition.
+func (t *Topic) PartitionTimestampAt(partitionID int, offset int64) (int64, error) {
+	if partitionID < 0 || partitionID >= t.numParts {
+		return 0, fmt.Errorf("partition %d out of range [0, %d)", partitionID, t.numParts)
+	}
+	return t.partitions[partitionID].TimestampAt(offset)
+}
+
+// PartitionFindOffsetByTimestamp returns the first offset whose timestamp >= ts in a partition.
+func (t *Topic) PartitionFindOffsetByTimestamp(partitionID int, ts int64) (int64, error) {
+	if partitionID < 0 || partitionID >= t.numParts {
+		return -1, fmt.Errorf("partition %d out of range [0, %d)", partitionID, t.numParts)
+	}
+	return t.partitions[partitionID].FindOffsetByTimestamp(ts)
+}
+
 // Close closes all partitions.
 func (t *Topic) Close() error {
 	var firstErr error

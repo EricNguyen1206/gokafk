@@ -18,8 +18,7 @@ func (b *Broker) routeMessage(ctx context.Context, header *kafkaprotocol.Request
 		return b.handleFetch(header.CorrelationId, data)
 
 	case kafkaprotocol.ApiKeyListOffsets: // 2
-		// Return 0 for now
-		return kafkaprotocol.HandleOffsetFetchResponse(header.CorrelationId, "test-topic", 0, 0), nil
+		return b.handleListOffsets(header.CorrelationId, data)
 
 	case kafkaprotocol.ApiKeyMetadata: // 3
 		return kafkaprotocol.HandleMetadata(header.CorrelationId, data), nil
@@ -139,28 +138,102 @@ func (b *Broker) handleOffsetFetch(correlationId int32, data []byte) ([]byte, er
 		return nil, fmt.Errorf("parse offset fetch: %w", err)
 	}
 
-	if len(reqs) == 0 {
-		return kafkaprotocol.HandleOffsetFetchResponse(correlationId, "test-topic", 0, 0), nil
+	var entries []kafkaprotocol.OffsetFetchResponseEntry
+	for _, req := range reqs {
+		var partEntries []kafkaprotocol.OffsetFetchPartitionEntry
+		for _, partition := range req.Partitions {
+			// Default: -1 = no committed offset (Kafka spec)
+			var offset int64 = -1
+
+			b.mu.RLock()
+			tp, ok := b.topics[req.Topic]
+			b.mu.RUnlock()
+
+			if ok {
+				cg := tp.GetOrCreateConsumerGroup(groupID)
+				committed := cg.GetPartitionOffset(int(partition))
+				if committed > 0 {
+					offset = committed
+				}
+			}
+
+			slog.Info("offset fetch", "group", groupID, "topic", req.Topic, "partition", partition, "offset", offset)
+			partEntries = append(partEntries, kafkaprotocol.OffsetFetchPartitionEntry{
+				Partition: partition,
+				Offset:    offset,
+			})
+		}
+		entries = append(entries, kafkaprotocol.OffsetFetchResponseEntry{
+			Topic:      req.Topic,
+			Partitions: partEntries,
+		})
 	}
 
-	req := reqs[0]
-	topicName := req.Topic
-	partition := int32(0)
-	if len(req.Partitions) > 0 {
-		partition = req.Partitions[0]
+	// If no topics were requested, return an empty response
+	if len(entries) == 0 {
+		entries = append(entries, kafkaprotocol.OffsetFetchResponseEntry{
+			Topic: "test-topic",
+			Partitions: []kafkaprotocol.OffsetFetchPartitionEntry{
+				{Partition: 0, Offset: -1},
+			},
+		})
 	}
 
-	// Lookup offset in memory
-	var offset int64 = 0
-	b.mu.RLock()
-	tp, ok := b.topics[topicName]
-	b.mu.RUnlock()
+	return kafkaprotocol.HandleOffsetFetchResponse(correlationId, entries), nil
+}
 
-	if ok {
-		cg := tp.GetOrCreateConsumerGroup(groupID)
-		offset = cg.GetPartitionOffset(int(partition))
+func (b *Broker) handleListOffsets(correlationId int32, data []byte) ([]byte, error) {
+	reqs, err := kafkaprotocol.ParseListOffsetsRequest(data)
+	if err != nil {
+		slog.Error("parse list offsets failed", "err", err)
+		return nil, fmt.Errorf("parse list offsets: %w", err)
 	}
 
-	slog.Info("offset fetch", "group", groupID, "topic", topicName, "partition", partition, "offset", offset)
-	return kafkaprotocol.HandleOffsetFetchResponse(correlationId, topicName, partition, offset), nil
+	var entries []kafkaprotocol.ListOffsetsResponseEntry
+	for _, req := range reqs {
+		entry := kafkaprotocol.ListOffsetsResponseEntry{
+			Topic:     req.Topic,
+			Partition: req.Partition,
+		}
+
+		tp, tpErr := b.getOrCreateTopic(req.Topic)
+		if tpErr != nil {
+			// Topic not found — return error code 3 (UNKNOWN_TOPIC_OR_PARTITION)
+			entry.ErrorCode = 3
+			entry.Offset = -1
+			entry.Timestamp = -1
+			entries = append(entries, entry)
+			continue
+		}
+
+		switch req.Timestamp {
+		case -2: // Earliest
+			entry.Offset = 0
+			entry.Timestamp = -2
+		case -1: // Latest
+			entry.Offset = tp.PartitionOffset(int(req.Partition))
+			entry.Timestamp = -1
+		default: // Real timestamp query
+			offset, findErr := tp.PartitionFindOffsetByTimestamp(int(req.Partition), req.Timestamp)
+			if findErr != nil {
+				entry.ErrorCode = 3
+				entry.Offset = -1
+				entry.Timestamp = -1
+			} else if offset == -1 {
+				// No message found at or after the requested timestamp
+				entry.Offset = -1
+				entry.Timestamp = -1
+			} else {
+				entry.Offset = offset
+				// Return the actual timestamp of the found message
+				ts, _ := tp.PartitionTimestampAt(int(req.Partition), offset)
+				entry.Timestamp = ts
+			}
+		}
+
+		slog.Info("list offsets", "topic", req.Topic, "partition", req.Partition, "timestamp", req.Timestamp, "offset", entry.Offset)
+		entries = append(entries, entry)
+	}
+
+	return kafkaprotocol.HandleListOffsetsResponse(correlationId, entries), nil
 }

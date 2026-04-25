@@ -108,17 +108,49 @@ Consumers request (pull) data at their own pace, naturally applying backpressure
 
 ## Usage
 
+### Using Go
+
 ```bash
 # Terminal 1 — Run broker
 go run cmd/gokafk/main.go server
 
-# Terminal 2 — Run producer (port=8000, topicID=1) 
+# Terminal 2 — Run producer (port=8000, topicID=1)
 # Usage: gokafk producer <port> <topicID> [optional-key]
 go run cmd/gokafk/main.go producer 8000 1 user_key
 
 # Terminal 3 — Run consumer (port=0, topicID=1, groupID=1)
 # Usage: gokafk consumer <port> <topicID> <groupID>
 go run cmd/gokafk/main.go consumer 0 1 1
+```
+
+### Using Docker
+
+```bash
+# Build & run broker
+docker compose up -d broker
+
+# View logs
+docker compose logs -f broker
+
+# Stop
+docker compose down
+```
+
+Or build manually:
+
+```bash
+# Build image
+docker build -t gokafk:dev .
+
+# Run broker
+docker run -d --name gokafk-broker -p 10000:10000 gokafk:dev
+```
+
+### Run integration tests (Docker)
+
+```bash
+# Starts broker + KafkaJS test suite
+docker compose up --build --abort-on-container-exit test-runner
 ```
 
 ## Project Structure
