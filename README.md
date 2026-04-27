@@ -64,7 +64,7 @@ graph LR
         end
 
         subgraph Coordination["Group Coordination"]
-            CG["CoordinatedGroup\n(leader election, generation tracking)"]
+            CG["GroupMetadata\n(leader election, generation tracking)"]
             CGO["ConsumerGroup\n(offset tracking per partition)"]
         end
 
@@ -91,44 +91,88 @@ graph LR
 
 ## Message Flow
 
-```mermaid
-sequenceDiagram
-    participant P as Producer
-    participant B as Broker
-    participant D as Disk (Segment)
-    participant C as Consumer
+### Producer Flow
 
-    Note over P,B: Connection Handshake
-    P->>B: ApiVersions
-    B-->>P: Supported API versions
-    P->>B: Metadata (topics)
-    B-->>P: Brokers, topics, partitions
+```
+PRODUCER (Client)                  BROKER (Server)                   STORAGE (Disk)
+      |                                  |                                  |
+      |------- 1. TCP Connect ---------->| (Accept & handleConnection)      |
+      |                                  |                                  |
+      |------- 2. ApiVersions Request -->| (Handshake - Negotiate version)  |
+      |<------ 3. ApiVersions Response --|                                  |
+      |                                  |                                  |
+      |------- 4. Metadata Request ----->| (Discover topics & partitions)   |
+      |<------ 5. Metadata Response -----| (orders: P0, P1, P2)            |
+      |                                  |                                  |
+      |------- 6. PRODUCE Request ------>| [Phase: Ingestion]               |
+      |       (Topic: "orders", P:0)     |  - codec.ReadRequest(ctx)        |
+      |       (Key: "u1", Val: "{...}")  |  - ParseProduceRequest (Decode)  |
+      |                                  |        |                         |
+      |                                  | [Phase: Processing]              |
+      |                                  |  - handleProduce                 |
+      |                                  |  - tp.Append(Key, Value)         |
+      |                                  |        |                         |
+      |                                  |        |---- 7. Write Data ----->|
+      |                                  |        |   (Write to orders/0.log)
+      |                                  |        |<--- 8. Return Offset ---|
+      |                                  |        |        (Offset: 1024)   |
+      |                                  | [Phase: Response]                |
+      |                                  |  - HandleProduceResponse (Encode)|
+      |<------ 9. PRODUCE Response ------|  - codec.WriteResponse(resp)     |
+      |       (Offset = 1024, Error = 0) |                                  |
+      |                                  |                                  |
+```
 
-    Note over P,D: Produce Flow
-    P->>B: Produce {topic, key, value}
-    B->>B: FNV-32a(key) → Partition X
-    B->>D: Append(value) → binary frame
-    B-->>P: ProduceResponse {partition, offset}
+### Consumer Flow
 
-    Note over C,B: Consumer Group Join
-    C->>B: FindCoordinator {groupId}
-    B-->>C: Coordinator = Node 0
-    C->>B: JoinGroup {groupId, protocols}
-    B->>B: Register member, elect leader
-    B-->>C: JoinGroupResponse {generationId, leaderId, memberId, members}
-    C->>B: SyncGroup {groupId, memberId, assignments}
-    B-->>C: SyncGroupResponse {assignment bytes}
-
-    Note over C,D: Fetch Flow
-    C->>B: OffsetFetch {groupId, topic, partitions}
-    B-->>C: Committed offsets (or -1)
-    C->>B: Fetch {topic, partition, offset}
-    B->>D: Read(partition, offset)
-    D-->>B: Message bytes
-    B-->>C: FetchResponse {records}
-    C->>B: OffsetCommit {groupId, topic, partition, offset}
-    B->>B: Persist to __consumer_offsets
-    B-->>C: OffsetCommitResponse (OK)
+```
+CONSUMER (Client)                BROKER (Server)                      STORAGE (Disk)
+      |                                  |                                  |
+      |-- 1. Metadata("orders") -------->| (Discover topics & partitions)   |
+      |<-- 2. "orders: P0, P1, P2" ------|                                  |
+      |                                  |                                  |
+      |-- 3. FindCoordinator(GroupID) -->| (kafkaprotocol.HandleFindCoordinator)
+      |<-- 4. "Node 1 is Coordinator" ---| (Locate broker managing the group) |
+      |                                  |                                  |
+      |-- 5. JoinGroup("order-processor")| (broker.handleJoinGroup)         |
+      |      (Request to join group)     | - Elect Leader, wait for members |
+      |<-- 6. "Joined Group - Member ID" |                                  |
+      |                                  |                                  |
+      |-- 7. SyncGroup(Assignments) ---->| (broker.handleSyncGroup)         |
+      |<-- 8. "You handle: orders [P:0]" | (Assignment: read Partition 0)   |
+      |                                  |                                  |
+      |-- 9. Heartbeat(Generation) ----->| (broker.handleHeartbeat)         |
+      |      (Keep membership alive)     | - Validate generation & member   |
+      |<-- 10. "Heartbeat OK" -----------|                                  |
+      |       ... (periodic)             |                                  |
+      |                                  |                                  |
+      |-- 11. OffsetFetch(orders, P:0) ->| (broker.handleOffsetFetch)       |
+      |<-- 12. "Last Committed: 1024" ---| (Query: "Where did I leave off?")|
+      |                                  |                                  |
+      |-- 13. ListOffsets(orders, P:0) ->| (broker.handleListOffsets)       |
+      |      (Query: "What offsets exist?")                                 |
+      |<-- 14. "Earliest: 0, Latest: 1050"| (Determine readable range)     |
+      |                                  |                                  |
+      |-- 15. FETCH(orders, P:0, O:1024) | (broker.handleFetch)             |
+      |      (Pull messages from 1024)   |        |                         |
+      |                                  | 16. tp.ReadFromPartition(0, 1024)|
+      |                                  |        |------------------------>|
+      |                                  |        | [Read file orders/0.log]|
+      |                                  |        |<------------------------|
+      |<-- 17. RecordBatch (Data Bytes) -| (Actual message data payload)    |
+      |                                  |                                  |
+      |-- 18. OffsetCommit(orders, P:0, O:1025) -> (broker.handleOffsetCommit)
+      |      (Notify: "Processed 1024")  |        |                         |
+      |                                  | 19. commitConsumerOffset         |
+      |                                  |        |------------------------>|
+      |                                  |        | [Write to __consumer_offsets]
+      |<-- 20. "Commit OK" --------------|                                  |
+      |                                  |                                  |
+      |     ... (repeat fetch/commit ... |                                  |
+      |                                  |                                  |
+      |-- 21. LeaveGroup(GroupID) ------>| (broker.handleLeaveGroup)        |
+      |      (Graceful shutdown)         | - Remove member, trigger rebalance
+      |<-- 22. "Leave OK" --------------|                                  |
 ```
 
 ## Design Decisions
@@ -144,7 +188,7 @@ Topics are sharded into partitions (default: 3, configurable). Using `FNV-32a`, 
 
 ### Two-Layer Consumer Group Architecture
 Consumer groups are managed at two levels:
-- **`CoordinatedGroup`** (broker-level): Handles the group protocol — JoinGroup/SyncGroup/LeaveGroup. Manages leader election, generation tracking, and assignment distribution via channel-based synchronization.
+- **`GroupMetadata`** (broker-level): Handles the group protocol — JoinGroup/SyncGroup/LeaveGroup. Manages leader election, generation tracking, and assignment distribution via channel-based synchronization.
 - **`ConsumerGroup`** (topic-level): Tracks committed offsets per partition. Uses Range Assignor for partition distribution.
 
 The broker acts as a pass-through for partition assignments: the leader consumer computes assignments, the broker stores and distributes them.
@@ -240,15 +284,17 @@ gokafk/
 │       ├── joingroup.go              #   JoinGroup request/response (v5)
 │       ├── syncgroup.go              #   SyncGroup request/response (v3)
 │       ├── leavegroup.go             #   LeaveGroup request/response (v2)
+│       ├── heartbeat.go              #   Heartbeat request/response (v1)
 │       ├── handle_offset_commit.go   #   OffsetCommit request/response
-│       └── offset_fetch.go           #   OffsetFetch request/response
+│       ├── offset_fetch.go           #   OffsetFetch request/response
+│       └── group_protocol_test.go    #   Group protocol unit tests
 ├── internal/
 │   ├── broker/                       # Core broker logic
 │   │   ├── broker.go                 #   TCP server, connection handling, lifecycle
 │   │   ├── handler.go                #   API key routing & request handlers
 │   │   ├── topic.go                  #   Topic management, key-based partition routing
 │   │   ├── partition.go              #   Partition wrapper over storage segments
-│   │   ├── group_coordinator.go      #   CoordinatedGroup: JoinGroup/SyncGroup/LeaveGroup protocol
+│   │   ├── group_metadata.go         #   GroupMetadata: JoinGroup/SyncGroup/LeaveGroup protocol
 │   │   ├── consumer_group.go         #   ConsumerGroup: offset tracking & range assignor
 │   │   └── consumer_offsets.go       #   Persistent offset storage via __consumer_offsets topic
 │   ├── config/                       # Configuration defaults

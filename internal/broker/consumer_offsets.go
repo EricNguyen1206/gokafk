@@ -17,45 +17,78 @@ func (b *Broker) recoverConsumerOffsets() error {
 		return err
 	}
 
+	var recovered int
 	for i := 0; i < tp.NumPartitions(); i++ {
-		var offset int64 = 0
-		for {
+		for offset := int64(0); ; offset++ {
 			data, err := tp.ReadFromPartition(i, offset)
 			if err != nil {
-				// Reached end of partition
-				break
+				break // end of partition
 			}
 
-			// Parse data: [KeyLen(4)][KeyBytes][ValueLen(4)][ValueBytes]
-			if len(data) >= 4 {
-				keyLen := int(binary.BigEndian.Uint32(data[0:4]))
-				if len(data) >= 4+keyLen+4 {
-					key := string(data[4 : 4+keyLen])
-					valLen := int(binary.BigEndian.Uint32(data[4+keyLen : 8+keyLen]))
-					if len(data) >= 8+keyLen+valLen {
-						val := string(data[8+keyLen : 8+keyLen+valLen])
-
-						// Apply to memory
-						// Key format: groupID:topic:partition
-						parts := strings.Split(key, ":")
-						if len(parts) == 3 {
-							groupID := parts[0]
-							topicName := parts[1]
-							partition, _ := strconv.Atoi(parts[2])
-							offsetVal, _ := strconv.ParseInt(val, 10, 64)
-
-							b.applyOffsetRecovery(groupID, topicName, partition, offsetVal)
-						}
-					}
-				}
+			key, val, err := parseOffsetRecord(data)
+			if err != nil {
+				slog.Warn("skip malformed offset record", "partition", i, "offset", offset, "err", err)
+				continue
 			}
 
-			offset++
+			groupID, topicName, partition, offsetVal, err := parseOffsetKey(key, val)
+			if err != nil {
+				slog.Warn("skip invalid offset key", "key", key, "err", err)
+				continue
+			}
+
+			b.applyOffsetRecovery(groupID, topicName, partition, offsetVal)
+			recovered++
 		}
 	}
 
-	slog.Info("recovered consumer offsets", "topic", ConsumerOffsetsTopic)
+	slog.Info("recovered consumer offsets", "topic", ConsumerOffsetsTopic, "count", recovered)
 	return nil
+}
+
+// parseOffsetRecord decodes the binary format: [KeyLen(4)][KeyBytes][ValLen(4)][ValBytes]
+func parseOffsetRecord(data []byte) (key, val string, err error) {
+	if len(data) < 4 {
+		return "", "", fmt.Errorf("data too short for key length: %d bytes", len(data))
+	}
+
+	keyLen := int(binary.BigEndian.Uint32(data[0:4]))
+	keyEnd := 4 + keyLen
+
+	if len(data) < keyEnd+4 {
+		return "", "", fmt.Errorf("data too short for value length: need %d, have %d", keyEnd+4, len(data))
+	}
+
+	key = string(data[4:keyEnd])
+	valLen := int(binary.BigEndian.Uint32(data[keyEnd : keyEnd+4]))
+	valEnd := keyEnd + 4 + valLen
+
+	if len(data) < valEnd {
+		return "", "", fmt.Errorf("data too short for value: need %d, have %d", valEnd, len(data))
+	}
+
+	val = string(data[keyEnd+4 : valEnd])
+	return key, val, nil
+}
+
+// parseOffsetKey splits "groupID:topic:partition" key and parses the offset value.
+func parseOffsetKey(key, val string) (groupID, topicName string, partition int, offset int64, err error) {
+	parts := strings.SplitN(key, ":", 3)
+	if len(parts) != 3 {
+		return "", "", 0, 0, fmt.Errorf("expected 3 parts, got %d", len(parts))
+	}
+
+	partition, err = strconv.Atoi(parts[2])
+	if err != nil {
+		return "", "", 0, 0, fmt.Errorf("invalid partition %q: %w", parts[2], err)
+	}
+
+	offset, err = strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		return "", "", 0, 0, fmt.Errorf("invalid offset %q: %w", val, err)
+	}
+
+	return parts[0], parts[1], partition, offset, nil
 }
 
 func (b *Broker) applyOffsetRecovery(groupID, topicName string, partition int, offset int64) {

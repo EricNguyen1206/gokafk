@@ -36,12 +36,7 @@ func (b *Broker) routeMessage(ctx context.Context, header *kafkaprotocol.Request
 		return b.handleJoinGroup(header.CorrelationId, data)
 
 	case kafkaprotocol.ApiKeyHeartbeat: // 12
-		// Heartbeat: just echo correlationId with no error
-		enc := kafkaprotocol.NewEncoder()
-		enc.WriteInt32(header.CorrelationId)
-		enc.WriteInt32(0) // throttle_time_ms
-		enc.WriteInt16(0) // error_code
-		return enc.Bytes(), nil
+		return kafkaprotocol.HandleHeartbeat(header.CorrelationId), nil
 
 	case kafkaprotocol.ApiKeyLeaveGroup: // 13
 		return b.handleLeaveGroup(header.CorrelationId, data)
@@ -71,7 +66,7 @@ func (b *Broker) handleProduce(correlationId int32, data []byte) ([]byte, error)
 	if len(records) == 0 {
 		return kafkaprotocol.HandleProduceResponse(correlationId, "test-topic", 0, 0), nil
 	}
-
+	// TODO: Support produce multiple records
 	rec := records[0]
 	tp, err := b.getOrCreateTopic(rec.Topic)
 	if err != nil {
@@ -98,7 +93,7 @@ func (b *Broker) handleFetch(correlationId int32, data []byte) ([]byte, error) {
 	if len(fetchReqs) == 0 {
 		return kafkaprotocol.HandleFetchResponse(correlationId, "test-topic", 0, nil, 0), nil
 	}
-
+	// TODO: Support fetch multiple records
 	req := fetchReqs[0]
 	tp, err := b.getOrCreateTopic(req.Topic)
 	if err != nil {

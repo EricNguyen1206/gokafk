@@ -11,14 +11,17 @@ type Decoder struct {
 	pos  int
 }
 
+// NewDecoder creates a new decoder for the given data
 func NewDecoder(data []byte) *Decoder {
 	return &Decoder{data: data}
 }
 
+// Remaining bytes in the buffer
 func (d *Decoder) Remaining() int {
 	return len(d.data) - d.pos
 }
 
+// read next byte as int8
 func (d *Decoder) ReadInt8() (int8, error) {
 	if d.pos+1 > len(d.data) {
 		return 0, io.ErrUnexpectedEOF
@@ -28,6 +31,7 @@ func (d *Decoder) ReadInt8() (int8, error) {
 	return val, nil
 }
 
+// read next 2 bytes as int16
 func (d *Decoder) ReadInt16() (int16, error) {
 	if d.pos+2 > len(d.data) {
 		return 0, io.ErrUnexpectedEOF
@@ -37,6 +41,7 @@ func (d *Decoder) ReadInt16() (int16, error) {
 	return val, nil
 }
 
+// read next 4 bytes as int32
 func (d *Decoder) ReadInt32() (int32, error) {
 	if d.pos+4 > len(d.data) {
 		return 0, io.ErrUnexpectedEOF
@@ -46,6 +51,7 @@ func (d *Decoder) ReadInt32() (int32, error) {
 	return val, nil
 }
 
+// read next 8 bytes as int64
 func (d *Decoder) ReadInt64() (int64, error) {
 	if d.pos+8 > len(d.data) {
 		return 0, io.ErrUnexpectedEOF
@@ -57,18 +63,18 @@ func (d *Decoder) ReadInt64() (int64, error) {
 
 // ReadString reads a string prefixed with int16 length
 func (d *Decoder) ReadString() (string, error) {
-	ln, err := d.ReadInt16()
+	strLen, err := d.ReadInt16()
 	if err != nil {
 		return "", err
 	}
-	if ln == -1 {
+	if strLen == -1 {
 		return "", nil // null string
 	}
-	if d.pos+int(ln) > len(d.data) {
+	if d.pos+int(strLen) > len(d.data) {
 		return "", io.ErrUnexpectedEOF
 	}
-	val := string(d.data[d.pos : d.pos+int(ln)])
-	d.pos += int(ln)
+	val := string(d.data[d.pos : d.pos+int(strLen)])
+	d.pos += int(strLen)
 	return val, nil
 }
 
@@ -109,7 +115,6 @@ func (d *Decoder) ReadVarInt() (int64, error) {
 	res := (value >> 1) ^ uint64(-(value & 1))
 	return int64(res), nil
 }
-
 
 // Encoder provides methods to write Kafka primitives to a buffer
 type Encoder struct {

@@ -9,31 +9,31 @@ import (
 	"gokafk/pkg/kafkaprotocol"
 )
 
-// CoordinatedGroup manages the group coordination protocol (JoinGroup/SyncGroup/LeaveGroup).
+// GroupMetadata manages the group coordination protocol (JoinGroup/SyncGroup/LeaveGroup).
 // This is separate from ConsumerGroup which handles offset tracking.
-type CoordinatedGroup struct {
+type GroupMetadata struct {
 	mu           sync.Mutex
 	groupID      string
 	generationID int32
 	protocolName string
 	leaderID     string
-	members      map[string]*CoordinatedMember
+	members      map[string]*MemberMetadata
 	assignments  map[string][]byte // memberID → raw assignment bytes from leader
-	assignReady  chan struct{}      // closed when leader submits assignments via SyncGroup
+	assignReady  chan struct{}     // closed when leader submits assignments via SyncGroup
 }
 
-// CoordinatedMember represents a member in a coordinated group.
-type CoordinatedMember struct {
+// MemberMetadata represents a member in a coordinated group.
+type MemberMetadata struct {
 	memberID  string
 	clientID  string
 	protocols []kafkaprotocol.JoinGroupProtocol
 }
 
-// NewCoordinatedGroup creates a new coordinated group.
-func NewCoordinatedGroup(groupID string) *CoordinatedGroup {
-	return &CoordinatedGroup{
+// NewGroupMetadata creates a new coordinated group.
+func NewGroupMetadata(groupID string) *GroupMetadata {
+	return &GroupMetadata{
 		groupID:     groupID,
-		members:     make(map[string]*CoordinatedMember),
+		members:     make(map[string]*MemberMetadata),
 		assignments: make(map[string][]byte),
 		assignReady: make(chan struct{}),
 	}
@@ -41,7 +41,7 @@ func NewCoordinatedGroup(groupID string) *CoordinatedGroup {
 
 // Join handles a JoinGroup request. Registers the member, elects leader, increments generation.
 // Returns: generationID, protocolName, leaderID, memberID, members list
-func (g *CoordinatedGroup) Join(memberID, clientID string, protocols []kafkaprotocol.JoinGroupProtocol) (int32, string, string, string, []kafkaprotocol.JoinGroupMember) {
+func (g *GroupMetadata) Join(memberID, clientID string, protocols []kafkaprotocol.JoinGroupProtocol) (int32, string, string, string, []kafkaprotocol.JoinGroupMember) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -51,7 +51,7 @@ func (g *CoordinatedGroup) Join(memberID, clientID string, protocols []kafkaprot
 	}
 
 	// Register member
-	g.members[memberID] = &CoordinatedMember{
+	g.members[memberID] = &MemberMetadata{
 		memberID:  memberID,
 		clientID:  clientID,
 		protocols: protocols,
@@ -103,7 +103,7 @@ func (g *CoordinatedGroup) Join(memberID, clientID string, protocols []kafkaprot
 // Sync handles a SyncGroup request.
 // Leader provides assignments for all members; followers wait for assignments.
 // Returns: assignment bytes for the requesting member.
-func (g *CoordinatedGroup) Sync(memberID string, assignments []kafkaprotocol.SyncGroupAssignment) ([]byte, error) {
+func (g *GroupMetadata) Sync(memberID string, assignments []kafkaprotocol.SyncGroupAssignment) ([]byte, error) {
 	g.mu.Lock()
 
 	isLeader := memberID == g.leaderID
@@ -153,7 +153,7 @@ func (g *CoordinatedGroup) Sync(memberID string, assignments []kafkaprotocol.Syn
 }
 
 // Leave removes a member from the group.
-func (g *CoordinatedGroup) Leave(memberID string) {
+func (g *GroupMetadata) Leave(memberID string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -177,13 +177,13 @@ func (g *CoordinatedGroup) Leave(memberID string) {
 
 // --- Broker-level handler methods ---
 
-func (b *Broker) getOrCreateCoordinatedGroup(groupID string) *CoordinatedGroup {
+func (b *Broker) getOrCreateGroupMetadata(groupID string) *GroupMetadata {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	g, ok := b.groups[groupID]
 	if !ok {
-		g = NewCoordinatedGroup(groupID)
+		g = NewGroupMetadata(groupID)
 		b.groups[groupID] = g
 	}
 	return g
@@ -196,7 +196,7 @@ func (b *Broker) handleJoinGroup(correlationId int32, data []byte) ([]byte, erro
 		return kafkaprotocol.HandleJoinGroupResponse(correlationId, 76, 0, "", "", "", nil), nil // 76 = GROUP_AUTHORIZATION_FAILED
 	}
 
-	g := b.getOrCreateCoordinatedGroup(req.GroupID)
+	g := b.getOrCreateGroupMetadata(req.GroupID)
 	generationID, protocolName, leaderID, memberID, members := g.Join(req.MemberID, "", req.Protocols)
 
 	return kafkaprotocol.HandleJoinGroupResponse(
@@ -217,7 +217,7 @@ func (b *Broker) handleSyncGroup(correlationId int32, data []byte) ([]byte, erro
 		return kafkaprotocol.HandleSyncGroupResponse(correlationId, 76, nil), nil
 	}
 
-	g := b.getOrCreateCoordinatedGroup(req.GroupID)
+	g := b.getOrCreateGroupMetadata(req.GroupID)
 	assignment, err := g.Sync(req.MemberID, req.Assignments)
 	if err != nil {
 		slog.Error("sync group failed", "err", err)
@@ -234,7 +234,7 @@ func (b *Broker) handleLeaveGroup(correlationId int32, data []byte) ([]byte, err
 		return kafkaprotocol.HandleLeaveGroupResponse(correlationId, 76), nil
 	}
 
-	g := b.getOrCreateCoordinatedGroup(req.GroupID)
+	g := b.getOrCreateGroupMetadata(req.GroupID)
 	g.Leave(req.MemberID)
 
 	return kafkaprotocol.HandleLeaveGroupResponse(correlationId, 0), nil
