@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// headerSize is the size of each frame header in bytes:
+// HEADER_SIZE is the size of each frame header in bytes:
 // [Offset: 8 bytes][Timestamp: 8 bytes][Size: 4 bytes]
-const headerSize = 20
+const HEADER_SIZE = 20
 
 // Segment implements the Store interface as an append-only log file
 // with an in-memory sparse index for O(1) offset lookups.
@@ -63,7 +63,7 @@ func (s *Segment) rebuildIndex() error {
 	}
 
 	var bytePos int64 = 0
-	headerBuf := make([]byte, headerSize) // 8 bytes Offset + 8 bytes Timestamp + 4 bytes Size
+	headerBuf := make([]byte, HEADER_SIZE) // 8 bytes Offset + 8 bytes Timestamp + 4 bytes Size
 
 	for {
 		// Read header
@@ -71,7 +71,7 @@ func (s *Segment) rebuildIndex() error {
 		if n == 0 || err != nil {
 			break // EOF or error
 		}
-		if n < headerSize {
+		if n < HEADER_SIZE {
 			break // corrupted file, stop rebuilding
 		}
 
@@ -85,7 +85,7 @@ func (s *Segment) rebuildIndex() error {
 		s.timestampIndex[offset] = timestamp
 
 		// Jump over payload to the next frame
-		bytePos += int64(headerSize) + int64(size)
+		bytePos += int64(HEADER_SIZE) + int64(size)
 		if _, err := s.file.Seek(bytePos, 0); err != nil {
 			break
 		}
@@ -117,11 +117,11 @@ func (s *Segment) Append(data []byte) (int64, error) {
 
 	// Build binary frame: [Offset: 8 bytes][Timestamp: 8 bytes][Size: 4 bytes][Payload]
 	size := len(data)
-	frame := make([]byte, headerSize+size)
+	frame := make([]byte, HEADER_SIZE+size)
 	binary.BigEndian.PutUint64(frame[0:8], uint64(offset))
 	binary.BigEndian.PutUint64(frame[8:16], uint64(timestamp))
 	binary.BigEndian.PutUint32(frame[16:20], uint32(size))
-	copy(frame[headerSize:], data)
+	copy(frame[HEADER_SIZE:], data)
 
 	n, err := s.file.Write(frame)
 	if err != nil {
@@ -158,7 +158,7 @@ func (s *Segment) Read(offset int64) ([]byte, error) {
 		return nil, fmt.Errorf("segment read seek: %w", err)
 	}
 
-	headerBuf := make([]byte, headerSize) // 8 bytes Offset + 8 bytes Timestamp + 4 bytes Size
+	headerBuf := make([]byte, HEADER_SIZE) // 8 bytes Offset + 8 bytes Timestamp + 4 bytes Size
 	if _, err := readFile.Read(headerBuf); err != nil {
 		return nil, fmt.Errorf("segment read header: %w", err)
 	}

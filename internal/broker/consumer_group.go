@@ -10,12 +10,12 @@ import (
 type ConsumerGroup struct {
 	mu          sync.RWMutex
 	group       string
-	members     map[string]*GroupMember // memberID -> member
-	assignments map[string][]int        // memberID -> partition IDs
-	offsets     map[int]int64           // partitionID -> committed offset
+	members     map[string]*Consumer // memberID -> consumer
+	assignments map[string][]int     // memberID -> partition IDs
+	offsets     map[int]int64        // partitionID -> committed offset
 }
 
-type GroupMember struct {
+type Consumer struct {
 	memberID string
 	conn     net.Conn
 	joinedAt time.Time
@@ -24,7 +24,7 @@ type GroupMember struct {
 func NewConsumerGroup(groupName string) *ConsumerGroup {
 	return &ConsumerGroup{
 		group:       groupName,
-		members:     make(map[string]*GroupMember),
+		members:     make(map[string]*Consumer),
 		assignments: make(map[string][]int),
 		offsets:     make(map[int]int64),
 	}
@@ -35,7 +35,7 @@ func (cg *ConsumerGroup) AddMember(conn net.Conn) string {
 	defer cg.mu.Unlock()
 
 	memberId := conn.RemoteAddr().String()
-	cg.members[memberId] = &GroupMember{
+	cg.members[memberId] = &Consumer{
 		memberID: memberId,
 		conn:     conn,
 		joinedAt: time.Now(),

@@ -58,6 +58,7 @@ func ParseFetchRequest(reqData []byte) ([]FetchRequestInfo, error) {
 	return fetchReqs, nil
 }
 
+// HandleFetchResponse handles a fetch response for a single topic and partition.
 func HandleFetchResponse(correlationId int32, topic string, partition int32, messages [][]byte, startOffset int64) []byte {
 	enc := NewEncoder()
 	enc.WriteInt32(correlationId)

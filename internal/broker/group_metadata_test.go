@@ -6,8 +6,8 @@ import (
 	"gokafk/pkg/kafkaprotocol"
 )
 
-func TestCoordinatedGroup_Join_SingleMember(t *testing.T) {
-	g := NewCoordinatedGroup("test-group")
+func TestGroupMetadata_Join_SingleMember(t *testing.T) {
+	g := NewGroupMetadata("test-group")
 
 	protocols := []kafkaprotocol.JoinGroupProtocol{
 		{Name: "range", Metadata: []byte{0x01}},
@@ -33,8 +33,8 @@ func TestCoordinatedGroup_Join_SingleMember(t *testing.T) {
 	}
 }
 
-func TestCoordinatedGroup_Join_MultipleMembersLeaderElection(t *testing.T) {
-	g := NewCoordinatedGroup("test-group")
+func TestGroupMetadata_Join_MultipleMembersLeaderElection(t *testing.T) {
+	g := NewGroupMetadata("test-group")
 
 	protocols := []kafkaprotocol.JoinGroupProtocol{
 		{Name: "range", Metadata: nil},
@@ -60,8 +60,8 @@ func TestCoordinatedGroup_Join_MultipleMembersLeaderElection(t *testing.T) {
 	}
 }
 
-func TestCoordinatedGroup_SyncLeader(t *testing.T) {
-	g := NewCoordinatedGroup("test-group")
+func TestGroupMetadata_SyncLeader(t *testing.T) {
+	g := NewGroupMetadata("test-group")
 
 	protocols := []kafkaprotocol.JoinGroupProtocol{
 		{Name: "range", Metadata: nil},
@@ -83,8 +83,8 @@ func TestCoordinatedGroup_SyncLeader(t *testing.T) {
 	}
 }
 
-func TestCoordinatedGroup_Leave(t *testing.T) {
-	g := NewCoordinatedGroup("test-group")
+func TestGroupMetadata_Leave(t *testing.T) {
+	g := NewGroupMetadata("test-group")
 
 	protocols := []kafkaprotocol.JoinGroupProtocol{
 		{Name: "range", Metadata: nil},
@@ -103,8 +103,8 @@ func TestCoordinatedGroup_Leave(t *testing.T) {
 	}
 }
 
-func TestCoordinatedGroup_Leave_LeaderReelection(t *testing.T) {
-	g := NewCoordinatedGroup("test-group")
+func TestGroupMetadata_Leave_LeaderReelection(t *testing.T) {
+	g := NewGroupMetadata("test-group")
 
 	protocols := []kafkaprotocol.JoinGroupProtocol{
 		{Name: "range", Metadata: nil},

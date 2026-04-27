@@ -5,15 +5,20 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
+	"net"
+	"time"
 )
 
+// MAX_REQUEST_SIZE is the upper bound for a single Kafka request frame (100 MB).
+const MAX_REQUEST_SIZE = 100 * 1024 * 1024
+
 type KafkaCodec struct {
-	rw *bufio.ReadWriter
+	rw   *bufio.ReadWriter
+	conn net.Conn
 }
 
-func NewCodec(rw *bufio.ReadWriter) *KafkaCodec {
-	return &KafkaCodec{rw: rw}
+func NewCodec(rw *bufio.ReadWriter, conn net.Conn) *KafkaCodec {
+	return &KafkaCodec{rw: rw, conn: conn}
 }
 
 type RequestHeader struct {
@@ -25,20 +30,20 @@ type RequestHeader struct {
 }
 
 func (c *KafkaCodec) ReadRequest(ctx context.Context) (*RequestHeader, []byte, error) {
-	// 1. Read 4 bytes length
+	// 1. Read 4 bytes length — use short read deadlines so we can check ctx
 	lenBuf := make([]byte, 4)
-	if _, err := io.ReadFull(c.rw, lenBuf); err != nil {
+	if err := c.readFullCtx(ctx, lenBuf); err != nil {
 		return nil, nil, err
 	}
 	size := int32(binary.BigEndian.Uint32(lenBuf))
 
-	if size <= 0 || size > 100*1024*1024 { // Sanity check 100MB
+	if size <= 0 || size > MAX_REQUEST_SIZE {
 		return nil, nil, fmt.Errorf("invalid request size: %d", size)
 	}
 
 	// 2. Read 'size' bytes
 	data := make([]byte, size)
-	if _, err := io.ReadFull(c.rw, data); err != nil {
+	if err := c.readFullCtx(ctx, data); err != nil {
 		return nil, nil, err
 	}
 
@@ -74,6 +79,34 @@ func (c *KafkaCodec) ReadRequest(ctx context.Context) (*RequestHeader, []byte, e
 
 	// Return the unparsed remaining data
 	return header, decoder.data[decoder.pos:], nil
+}
+
+// readFullCtx reads exactly len(buf) bytes while respecting context cancellation.
+// Sets short read deadlines so the loop can check ctx.Done() between attempts.
+func (c *KafkaCodec) readFullCtx(ctx context.Context, buf []byte) error {
+	read := 0
+	for read < len(buf) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Set a short deadline so we don't block forever
+		c.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		n, err := c.rw.Read(buf[read:])
+		read += n
+
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				continue // deadline expired, loop back to check ctx
+			}
+			return err
+		}
+	}
+	// Clear deadline for subsequent writes
+	c.conn.SetReadDeadline(time.Time{})
+	return nil
 }
 
 // WriteResponse wraps a payload with the total size and writes it

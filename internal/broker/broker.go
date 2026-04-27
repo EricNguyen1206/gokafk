@@ -13,11 +13,12 @@ import (
 )
 
 // Broker is the central TCP server that routes messages between producers and consumers.
+// if broker is leader in cluster, it will handle the consumer group protocol
 type Broker struct {
 	cfg       *config.Config
 	mu        sync.RWMutex
 	topics    map[string]*Topic            // topicID → Topic
-	groups    map[string]*CoordinatedGroup // groupID → group coordinator
+	groups    map[string]*GroupMetadata // groupID → group coordinator
 	producers map[net.Conn]string          // client connection → client id
 	listener  net.Listener
 	wg        sync.WaitGroup
@@ -28,7 +29,7 @@ func NewBroker(cfg *config.Config) *Broker {
 	return &Broker{
 		cfg:       cfg,
 		topics:    make(map[string]*Topic),
-		groups:    make(map[string]*CoordinatedGroup),
+		groups:    make(map[string]*GroupMetadata),
 		producers: make(map[net.Conn]string),
 	}
 }
@@ -91,20 +92,16 @@ func (b *Broker) handleConnection(ctx context.Context, conn net.Conn) {
 	defer b.cleanupConnection(conn)
 
 	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	codec := kafkaprotocol.NewCodec(rw)
+	codec := kafkaprotocol.NewCodec(rw, conn)
 
 	slog.Info("new connection", "remote", conn.RemoteAddr())
 
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
 		header, data, err := codec.ReadRequest(ctx)
 		if err != nil {
-			// eof or read error
+			if ctx.Err() != nil {
+				slog.Debug("connection closed by shutdown", "remote", conn.RemoteAddr())
+			}
 			return
 		}
 
@@ -123,6 +120,7 @@ func (b *Broker) handleConnection(ctx context.Context, conn net.Conn) {
 	}
 }
 
+// gets or creates a topic with the given topic's name.
 func (b *Broker) getOrCreateTopic(topic string) (*Topic, error) {
 	b.mu.RLock()
 	tp, ok := b.topics[topic]
