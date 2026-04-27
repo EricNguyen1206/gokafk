@@ -29,9 +29,9 @@ func ParseLeaveGroupRequest(data []byte) (*LeaveGroupRequest, error) {
 
 // HandleLeaveGroupResponse builds a LeaveGroup response (v2, non-flexible).
 // Fields: CorrelationId, ThrottleTimeMs, ErrorCode
-func HandleLeaveGroupResponse(correlationId int32, errorCode int16) []byte {
+func HandleLeaveGroupResponse(correlationID int32, errorCode int16) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(correlationId)
+	enc.WriteInt32(correlationID)
 
 	enc.WriteInt32(0)         // throttle_time_ms
 	enc.WriteInt16(errorCode) // ErrorCode

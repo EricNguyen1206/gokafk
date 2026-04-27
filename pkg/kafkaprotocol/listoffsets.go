@@ -74,9 +74,9 @@ type ListOffsetsResponseEntry struct {
 //	    Timestamp      int64
 //	    Offset         int64
 //	    LeaderEpoch    int32 (v4+)
-func HandleListOffsetsResponse(correlationId int32, entries []ListOffsetsResponseEntry) []byte {
+func HandleListOffsetsResponse(correlationID int32, entries []ListOffsetsResponseEntry) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(correlationId)
+	enc.WriteInt32(correlationID)
 	enc.WriteInt32(0) // throttle_time_ms
 
 	// Group entries by topic

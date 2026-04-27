@@ -1,9 +1,9 @@
 package kafkaprotocol
 
 // HandleFindCoordinator mocks the FindCoordinatorResponse directing the client to Node 0.
-func HandleFindCoordinator(correlationId int32) []byte {
+func HandleFindCoordinator(correlationID int32) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(correlationId)
+	enc.WriteInt32(correlationID)
 
 	enc.WriteInt32(0)   // throttle_time_ms
 	enc.WriteInt16(0)   // ErrorCode = 0 (Success)

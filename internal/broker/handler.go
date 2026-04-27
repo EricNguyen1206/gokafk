@@ -10,95 +10,95 @@ import (
 )
 
 func (b *Broker) routeMessage(ctx context.Context, header *kafkaprotocol.RequestHeader, data []byte, conn net.Conn) ([]byte, error) {
-	switch header.ApiKey {
+	switch header.APIKey {
 	case kafkaprotocol.ApiKeyProduce: // 0
-		return b.handleProduce(header.CorrelationId, data)
+		return b.handleProduce(header.CorrelationID, data)
 
 	case kafkaprotocol.ApiKeyFetch: // 1
-		return b.handleFetch(header.CorrelationId, data)
+		return b.handleFetch(header.CorrelationID, data)
 
 	case kafkaprotocol.ApiKeyListOffsets: // 2
-		return b.handleListOffsets(header.CorrelationId, data)
+		return b.handleListOffsets(header.CorrelationID, data)
 
 	case kafkaprotocol.ApiKeyMetadata: // 3
-		return kafkaprotocol.HandleMetadata(header.CorrelationId, data), nil
+		return kafkaprotocol.HandleMetadata(header.CorrelationID, data), nil
 
 	case kafkaprotocol.ApiKeyOffsetCommit: // 8
-		return b.handleOffsetCommit(header.CorrelationId, data)
+		return b.handleOffsetCommit(header.CorrelationID, data)
 
 	case kafkaprotocol.ApiKeyOffsetFetch: // 9
-		return b.handleOffsetFetch(header.CorrelationId, data)
+		return b.handleOffsetFetch(header.CorrelationID, data)
 
 	case kafkaprotocol.ApiKeyFindCoordinator: // 10
-		return kafkaprotocol.HandleFindCoordinator(header.CorrelationId), nil
+		return kafkaprotocol.HandleFindCoordinator(header.CorrelationID), nil
 
 	case kafkaprotocol.ApiKeyJoinGroup: // 11
-		return b.handleJoinGroup(header.CorrelationId, data)
+		return b.handleJoinGroup(header.CorrelationID, data)
 
 	case kafkaprotocol.ApiKeyHeartbeat: // 12
-		return kafkaprotocol.HandleHeartbeat(header.CorrelationId), nil
+		return kafkaprotocol.HandleHeartbeat(header.CorrelationID), nil
 
 	case kafkaprotocol.ApiKeyLeaveGroup: // 13
-		return b.handleLeaveGroup(header.CorrelationId, data)
+		return b.handleLeaveGroup(header.CorrelationID, data)
 
 	case kafkaprotocol.ApiKeySyncGroup: // 14
-		return b.handleSyncGroup(header.CorrelationId, data)
+		return b.handleSyncGroup(header.CorrelationID, data)
 
 	case kafkaprotocol.ApiKeyApiVersions: // 18
-		return kafkaprotocol.HandleApiVersions(header.CorrelationId), nil
+		return kafkaprotocol.HandleApiVersions(header.CorrelationID), nil
 
 	default:
-		slog.Warn("unsupported api key", "key", header.ApiKey)
+		slog.Warn("unsupported api key", "key", header.APIKey)
 		// Return nil — don't crash the connection, just ignore
 		return nil, nil
 	}
 }
 
-func (b *Broker) handleProduce(correlationId int32, data []byte) ([]byte, error) {
+func (b *Broker) handleProduce(correlationID int32, data []byte) ([]byte, error) {
 	slog.Debug("handleProduce", "bytes", len(data), "raw", data[:min(len(data), 40)])
 	records, err := kafkaprotocol.ParseProduceRequest(data)
 	if err != nil {
 		slog.Error("parse produce failed", "err", err)
 		// Not crash connection, just return error response
-		return kafkaprotocol.HandleProduceResponse(correlationId, "unknown", 0, -1), nil
+		return kafkaprotocol.HandleProduceResponse(correlationID, "unknown", 0, -1), nil
 	}
 
 	if len(records) == 0 {
-		return kafkaprotocol.HandleProduceResponse(correlationId, "test-topic", 0, 0), nil
+		return kafkaprotocol.HandleProduceResponse(correlationID, "test-topic", 0, 0), nil
 	}
 	// TODO: Support produce multiple records
 	rec := records[0]
 	tp, err := b.getOrCreateTopic(rec.Topic)
 	if err != nil {
 		slog.Error("get topic failed", "topic", rec.Topic, "err", err)
-		return kafkaprotocol.HandleProduceResponse(correlationId, rec.Topic, 0, -1), nil
+		return kafkaprotocol.HandleProduceResponse(correlationID, rec.Topic, 0, -1), nil
 	}
 
 	_, offset, err := tp.Append(rec.Key, rec.Value)
 	if err != nil {
 		slog.Error("append failed", "err", err)
-		return kafkaprotocol.HandleProduceResponse(correlationId, rec.Topic, 0, -1), nil
+		return kafkaprotocol.HandleProduceResponse(correlationID, rec.Topic, 0, -1), nil
 	}
 	slog.Info("produced", "topic", rec.Topic, "offset", offset, "val", string(rec.Value))
 
-	return kafkaprotocol.HandleProduceResponse(correlationId, rec.Topic, rec.Partition, offset), nil
+	return kafkaprotocol.HandleProduceResponse(correlationID, rec.Topic, rec.Partition, offset), nil
 }
 
-func (b *Broker) handleFetch(correlationId int32, data []byte) ([]byte, error) {
+func (b *Broker) handleFetch(correlationID int32, data []byte) ([]byte, error) {
 	fetchReqs, err := kafkaprotocol.ParseFetchRequest(data)
 	if err != nil {
 		return nil, fmt.Errorf("parse fetch: %w", err)
 	}
 
 	if len(fetchReqs) == 0 {
-		return kafkaprotocol.HandleFetchResponse(correlationId, "test-topic", 0, nil, 0), nil
+		return kafkaprotocol.HandleFetchResponse(correlationID, "test-topic", 0, nil, 0), nil
 	}
 	// TODO: Support fetch multiple records
 	req := fetchReqs[0]
 	tp, err := b.getOrCreateTopic(req.Topic)
 	if err != nil {
 		// Topic doesn't exist yet
-		return kafkaprotocol.HandleFetchResponse(correlationId, req.Topic, req.Partition, nil, 0), nil
+		return kafkaprotocol.HandleFetchResponse(correlationID, req.Topic, req.Partition, nil, 0), nil
 	}
 
 	// read one message for simplification, starting from offset
@@ -108,10 +108,10 @@ func (b *Broker) handleFetch(correlationId int32, data []byte) ([]byte, error) {
 		msgs = append(msgs, msgData)
 	}
 
-	return kafkaprotocol.HandleFetchResponse(correlationId, req.Topic, req.Partition, msgs, req.Offset), nil
+	return kafkaprotocol.HandleFetchResponse(correlationID, req.Topic, req.Partition, msgs, req.Offset), nil
 }
 
-func (b *Broker) handleOffsetCommit(correlationId int32, data []byte) ([]byte, error) {
+func (b *Broker) handleOffsetCommit(correlationID int32, data []byte) ([]byte, error) {
 	groupID, reqs, err := kafkaprotocol.ParseOffsetCommitRequest(data)
 	if err != nil {
 		slog.Error("parse offset commit failed", "err", err)
@@ -125,10 +125,10 @@ func (b *Broker) handleOffsetCommit(correlationId int32, data []byte) ([]byte, e
 		}
 	}
 
-	return kafkaprotocol.HandleOffsetCommitResponse(correlationId), nil
+	return kafkaprotocol.HandleOffsetCommitResponse(correlationID), nil
 }
 
-func (b *Broker) handleOffsetFetch(correlationId int32, data []byte) ([]byte, error) {
+func (b *Broker) handleOffsetFetch(correlationID int32, data []byte) ([]byte, error) {
 	groupID, reqs, err := kafkaprotocol.ParseOffsetFetchRequest(data)
 	if err != nil {
 		slog.Error("parse offset fetch failed", "err", err)
@@ -176,10 +176,10 @@ func (b *Broker) handleOffsetFetch(correlationId int32, data []byte) ([]byte, er
 		})
 	}
 
-	return kafkaprotocol.HandleOffsetFetchResponse(correlationId, entries), nil
+	return kafkaprotocol.HandleOffsetFetchResponse(correlationID, entries), nil
 }
 
-func (b *Broker) handleListOffsets(correlationId int32, data []byte) ([]byte, error) {
+func (b *Broker) handleListOffsets(correlationID int32, data []byte) ([]byte, error) {
 	reqs, err := kafkaprotocol.ParseListOffsetsRequest(data)
 	if err != nil {
 		slog.Error("parse list offsets failed", "err", err)
@@ -232,5 +232,5 @@ func (b *Broker) handleListOffsets(correlationId int32, data []byte) ([]byte, er
 		entries = append(entries, entry)
 	}
 
-	return kafkaprotocol.HandleListOffsetsResponse(correlationId, entries), nil
+	return kafkaprotocol.HandleListOffsetsResponse(correlationID, entries), nil
 }

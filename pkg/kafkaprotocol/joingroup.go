@@ -95,13 +95,13 @@ func ParseJoinGroupRequest(data []byte) (*JoinGroupRequest, error) {
 
 // HandleJoinGroupResponse builds a JoinGroup response (v5, non-flexible).
 // Fields: CorrelationId, ThrottleTimeMs, ErrorCode, GenerationId, ProtocolName, LeaderId, MemberId, Members[]
-func HandleJoinGroupResponse(correlationId int32, errorCode int16, generationId int32, protocolName string, leaderID string, memberID string, members []JoinGroupMember) []byte {
+func HandleJoinGroupResponse(correlationID int32, errorCode int16, generationID int32, protocolName string, leaderID string, memberID string, members []JoinGroupMember) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(correlationId)
+	enc.WriteInt32(correlationID)
 
 	enc.WriteInt32(0)         // throttle_time_ms
 	enc.WriteInt16(errorCode) // ErrorCode
-	enc.WriteInt32(generationId)
+	enc.WriteInt32(generationID)
 
 	// Protocol Name
 	enc.WriteString(protocolName)

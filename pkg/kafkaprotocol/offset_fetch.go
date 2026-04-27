@@ -72,9 +72,9 @@ type OffsetFetchResponseEntry struct {
 //	    Metadata       string
 //	    ErrorCode      int16
 //	ErrorCode          int16 (top-level)
-func HandleOffsetFetchResponse(correlationId int32, entries []OffsetFetchResponseEntry) []byte {
+func HandleOffsetFetchResponse(correlationID int32, entries []OffsetFetchResponseEntry) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(correlationId)
+	enc.WriteInt32(correlationID)
 	enc.WriteInt32(0) // throttle_time_ms
 
 	enc.WriteInt32(int32(len(entries)))
