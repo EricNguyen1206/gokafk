@@ -29,13 +29,13 @@ type Segment struct {
 
 // Opens or creates a segment file for the given topic
 // If the file already exists, the in-memory index is rebuilt by scanning the log.
-func NewSegment(dir string, topicId uint16) (*Segment, error) {
+func NewSegment(dir string, topicID uint16) (*Segment, error) {
 	// Check folder exist
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("segment mkdir: %w", err)
 	}
 	// Open file for read+write+append+create
-	filepath := fmt.Sprintf("%s/topic_%d.log", dir, topicId)
+	filepath := fmt.Sprintf("%s/topic_%d.log", dir, topicID)
 	file, err := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("segment open: %w", err)

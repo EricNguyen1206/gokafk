@@ -66,9 +66,9 @@ func ParseOffsetCommitRequest(reqData []byte) (string, []OffsetCommitRequestInfo
 	return groupID, offsetCommitReqs, nil
 }
 
-func HandleOffsetCommitResponse(correlationId int32) []byte {
+func HandleOffsetCommitResponse(correlationID int32) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(correlationId)
+	enc.WriteInt32(correlationID)
 
 	// throttle_time_ms
 	enc.WriteInt32(0)

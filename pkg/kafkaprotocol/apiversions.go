@@ -1,9 +1,9 @@
 package kafkaprotocol
 
 // HandleApiVersions returns a static/mocked ApiVersion response stating we support basic APIs
-func HandleApiVersions(correlationId int32) []byte {
+func HandleApiVersions(correlationID int32) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(correlationId)
+	enc.WriteInt32(correlationID)
 
 	enc.WriteInt16(0) // ErrorCode = 0 (Success)
 

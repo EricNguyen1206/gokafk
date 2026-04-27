@@ -23,10 +23,10 @@ func NewCodec(rw *bufio.ReadWriter, conn net.Conn) *KafkaCodec {
 
 type RequestHeader struct {
 	Size          int32
-	ApiKey        int16
-	ApiVersion    int16
-	CorrelationId int32
-	ClientId      string
+	APIKey        int16
+	APIVersion    int16
+	CorrelationID int32
+	ClientID      string
 }
 
 func (c *KafkaCodec) ReadRequest(ctx context.Context) (*RequestHeader, []byte, error) {
@@ -58,23 +58,23 @@ func (c *KafkaCodec) ReadRequest(ctx context.Context) (*RequestHeader, []byte, e
 		return nil, nil, err
 	}
 
-	correlationId, err := decoder.ReadInt32()
+	correlationID, err := decoder.ReadInt32()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	clientId, err := decoder.ReadString()
+	clientID, err := decoder.ReadString()
 	if err != nil {
-		// some older versions might not have clientId properly, ignore error for now
-		clientId = ""
+		// some older versions might not have clientID properly, ignore error for now
+		clientID = ""
 	}
 
 	header := &RequestHeader{
 		Size:          size,
-		ApiKey:        apiKey,
-		ApiVersion:    apiVersion,
-		CorrelationId: correlationId,
-		ClientId:      clientId,
+		APIKey:        apiKey,
+		APIVersion:    apiVersion,
+		CorrelationID: correlationID,
+		ClientID:      clientID,
 	}
 
 	// Return the unparsed remaining data

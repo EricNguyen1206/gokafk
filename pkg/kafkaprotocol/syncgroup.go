@@ -74,9 +74,9 @@ func ParseSyncGroupRequest(data []byte) (*SyncGroupRequest, error) {
 
 // HandleSyncGroupResponse builds a SyncGroup response (v3, non-flexible).
 // Fields: CorrelationId, ThrottleTimeMs, ErrorCode, Assignment
-func HandleSyncGroupResponse(correlationId int32, errorCode int16, assignment []byte) []byte {
+func HandleSyncGroupResponse(correlationID int32, errorCode int16, assignment []byte) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(correlationId)
+	enc.WriteInt32(correlationID)
 
 	enc.WriteInt32(0)         // throttle_time_ms
 	enc.WriteInt16(errorCode) // ErrorCode

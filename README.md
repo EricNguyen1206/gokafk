@@ -98,11 +98,11 @@ PRODUCER (Client)                  BROKER (Server)                   STORAGE (Di
       |                                  |                                  |
       |------- 1. TCP Connect ---------->| (Accept & handleConnection)      |
       |                                  |                                  |
-      |------- 2. ApiVersions Request -->| (Handshake - Negotiate version)  |
+      |------- 2. ApiVersions Request -->| (Optional - Negotiate version)   |
       |<------ 3. ApiVersions Response --|                                  |
       |                                  |                                  |
       |------- 4. Metadata Request ----->| (Discover topics & partitions)   |
-      |<------ 5. Metadata Response -----| (orders: P0, P1, P2)            |
+      |<------ 5. Metadata Response -----| (orders: P0)                    |
       |                                  |                                  |
       |------- 6. PRODUCE Request ------>| [Phase: Ingestion]               |
       |       (Topic: "orders", P:0)     |  - codec.ReadRequest(ctx)        |
@@ -112,8 +112,8 @@ PRODUCER (Client)                  BROKER (Server)                   STORAGE (Di
       |                                  |  - handleProduce                 |
       |                                  |  - tp.Append(Key, Value)         |
       |                                  |        |                         |
-      |                                  |        |---- 7. Write Data ----->|
-      |                                  |        |   (Write to orders/0.log)
+      |                                  |        |---- 7. Write Frame ---->|
+      |                                  |        |   [Offset|Timestamp|Size|Data]
       |                                  |        |<--- 8. Return Offset ---|
       |                                  |        |        (Offset: 1024)   |
       |                                  | [Phase: Response]                |
@@ -129,20 +129,20 @@ PRODUCER (Client)                  BROKER (Server)                   STORAGE (Di
 CONSUMER (Client)                BROKER (Server)                      STORAGE (Disk)
       |                                  |                                  |
       |-- 1. Metadata("orders") -------->| (Discover topics & partitions)   |
-      |<-- 2. "orders: P0, P1, P2" ------|                                  |
+      |<-- 2. "orders: P0" ---------------|                                  |
       |                                  |                                  |
       |-- 3. FindCoordinator(GroupID) -->| (kafkaprotocol.HandleFindCoordinator)
-      |<-- 4. "Node 1 is Coordinator" ---| (Locate broker managing the group) |
+      |<-- 4. "Node 0 is Coordinator" ---| (Locate broker managing the group) |
       |                                  |                                  |
       |-- 5. JoinGroup("order-processor")| (broker.handleJoinGroup)         |
-      |      (Request to join group)     | - Elect Leader, wait for members |
-      |<-- 6. "Joined Group - Member ID" |                                  |
+      |      (Request to join group)     | - Register member, elect leader  |
+      |<-- 6. "Joined - Member ID, Gen"  |                                  |
       |                                  |                                  |
       |-- 7. SyncGroup(Assignments) ---->| (broker.handleSyncGroup)         |
-      |<-- 8. "You handle: orders [P:0]" | (Assignment: read Partition 0)   |
+      |<-- 8. "Assignment bytes (P:0)"   | (Opaque bytes from leader)       |
       |                                  |                                  |
       |-- 9. Heartbeat(Generation) ----->| (broker.handleHeartbeat)         |
-      |      (Keep membership alive)     | - Validate generation & member   |
+      |      (Keep membership alive)     | - Stateless, always returns OK   |
       |<-- 10. "Heartbeat OK" -----------|                                  |
       |       ... (periodic)             |                                  |
       |                                  |                                  |
@@ -154,7 +154,7 @@ CONSUMER (Client)                BROKER (Server)                      STORAGE (D
       |<-- 14. "Earliest: 0, Latest: 1050"| (Determine readable range)     |
       |                                  |                                  |
       |-- 15. FETCH(orders, P:0, O:1024) | (broker.handleFetch)             |
-      |      (Pull messages from 1024)   |        |                         |
+      |      (Pull single message)       |        |                         |
       |                                  | 16. tp.ReadFromPartition(0, 1024)|
       |                                  |        |------------------------>|
       |                                  |        | [Read file orders/0.log]|
@@ -181,12 +181,15 @@ CONSUMER (Client)                BROKER (Server)                      STORAGE (D
 Rather than inventing a custom protocol, gokafk implements the real Kafka binary protocol. This means any Kafka client library (KafkaJS, Sarama, librdkafka, etc.) can connect directly. The broker uses length-prefixed framing with Big-Endian encoding, matching the [Kafka protocol spec](https://kafka.apache.org/protocol.html).
 
 ### Append-Only Segment Logs
-Data is written sequentially (append-only) to binary-frame segment files. Each frame stores: `[timestamp(8) | data_length(4) | data(N)]`. An in-memory sparse index maps `offset → byte_position` for O(1) reads. Index is automatically rebuilt from the log file on broker restart.
+
+Data is written sequentially (append-only) to binary-frame segment files. Each frame stores: `[offset(8) | timestamp(8) | data_length(4) | data(N)]`. An in-memory sparse index maps `offset → byte_position` for O(1) reads. Index is automatically rebuilt from the log file on broker restart.
 
 ### Partitions & Key-Based Routing
+
 Topics are sharded into partitions (default: 3, configurable). Using `FNV-32a`, messages with the same key are consistently routed to the same partition — guaranteeing per-key ordering while allowing horizontal read throughput.
 
 ### Two-Layer Consumer Group Architecture
+
 Consumer groups are managed at two levels:
 - **`GroupMetadata`** (broker-level): Handles the group protocol — JoinGroup/SyncGroup/LeaveGroup. Manages leader election, generation tracking, and assignment distribution via channel-based synchronization.
 - **`ConsumerGroup`** (topic-level): Tracks committed offsets per partition. Uses Range Assignor for partition distribution.
@@ -194,9 +197,11 @@ Consumer groups are managed at two levels:
 The broker acts as a pass-through for partition assignments: the leader consumer computes assignments, the broker stores and distributes them.
 
 ### Persistent Offset Recovery
+
 Consumer offsets are persisted to an internal `__consumer_offsets` topic using key-value encoding (`groupID:topic:partition → offset`). On broker restart, offsets are replayed from disk and restored to memory — preventing duplicate consumption.
 
 ### Pull-Based Consumption
+
 Consumers pull messages at their own pace via the Fetch API, naturally applying backpressure. The broker remains stateless regarding consumption progress — consumers track their own offsets and commit when ready.
 
 ## Usage

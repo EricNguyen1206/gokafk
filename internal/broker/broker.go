@@ -17,9 +17,8 @@ import (
 type Broker struct {
 	cfg       *config.Config
 	mu        sync.RWMutex
-	topics    map[string]*Topic            // topicID → Topic
+	topics    map[string]*Topic         // topicID → Topic
 	groups    map[string]*GroupMetadata // groupID → group coordinator
-	producers map[net.Conn]string          // client connection → client id
 	listener  net.Listener
 	wg        sync.WaitGroup
 }
@@ -30,7 +29,6 @@ func NewBroker(cfg *config.Config) *Broker {
 		cfg:       cfg,
 		topics:    make(map[string]*Topic),
 		groups:    make(map[string]*GroupMetadata),
-		producers: make(map[net.Conn]string),
 	}
 }
 
@@ -147,8 +145,5 @@ func (b *Broker) getOrCreateTopic(topic string) (*Topic, error) {
 }
 
 func (b *Broker) cleanupConnection(conn net.Conn) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	delete(b.producers, conn)
 	slog.Info("connection cleaned up", "remote", conn.RemoteAddr())
 }

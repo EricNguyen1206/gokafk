@@ -189,18 +189,18 @@ func (b *Broker) getOrCreateGroupMetadata(groupID string) *GroupMetadata {
 	return g
 }
 
-func (b *Broker) handleJoinGroup(correlationId int32, data []byte) ([]byte, error) {
+func (b *Broker) handleJoinGroup(correlationID int32, data []byte) ([]byte, error) {
 	req, err := kafkaprotocol.ParseJoinGroupRequest(data)
 	if err != nil {
 		slog.Error("parse join group failed", "err", err)
-		return kafkaprotocol.HandleJoinGroupResponse(correlationId, 76, 0, "", "", "", nil), nil // 76 = GROUP_AUTHORIZATION_FAILED
+		return kafkaprotocol.HandleJoinGroupResponse(correlationID, 76, 0, "", "", "", nil), nil // 76 = GROUP_AUTHORIZATION_FAILED
 	}
 
 	g := b.getOrCreateGroupMetadata(req.GroupID)
 	generationID, protocolName, leaderID, memberID, members := g.Join(req.MemberID, "", req.Protocols)
 
 	return kafkaprotocol.HandleJoinGroupResponse(
-		correlationId,
+		correlationID,
 		0, // no error
 		generationID,
 		protocolName,
@@ -210,32 +210,32 @@ func (b *Broker) handleJoinGroup(correlationId int32, data []byte) ([]byte, erro
 	), nil
 }
 
-func (b *Broker) handleSyncGroup(correlationId int32, data []byte) ([]byte, error) {
+func (b *Broker) handleSyncGroup(correlationID int32, data []byte) ([]byte, error) {
 	req, err := kafkaprotocol.ParseSyncGroupRequest(data)
 	if err != nil {
 		slog.Error("parse sync group failed", "err", err)
-		return kafkaprotocol.HandleSyncGroupResponse(correlationId, 76, nil), nil
+		return kafkaprotocol.HandleSyncGroupResponse(correlationID, 76, nil), nil
 	}
 
 	g := b.getOrCreateGroupMetadata(req.GroupID)
 	assignment, err := g.Sync(req.MemberID, req.Assignments)
 	if err != nil {
 		slog.Error("sync group failed", "err", err)
-		return kafkaprotocol.HandleSyncGroupResponse(correlationId, 25, nil), nil // 25 = REBALANCE_IN_PROGRESS
+		return kafkaprotocol.HandleSyncGroupResponse(correlationID, 25, nil), nil // 25 = REBALANCE_IN_PROGRESS
 	}
 
-	return kafkaprotocol.HandleSyncGroupResponse(correlationId, 0, assignment), nil
+	return kafkaprotocol.HandleSyncGroupResponse(correlationID, 0, assignment), nil
 }
 
-func (b *Broker) handleLeaveGroup(correlationId int32, data []byte) ([]byte, error) {
+func (b *Broker) handleLeaveGroup(correlationID int32, data []byte) ([]byte, error) {
 	req, err := kafkaprotocol.ParseLeaveGroupRequest(data)
 	if err != nil {
 		slog.Error("parse leave group failed", "err", err)
-		return kafkaprotocol.HandleLeaveGroupResponse(correlationId, 76), nil
+		return kafkaprotocol.HandleLeaveGroupResponse(correlationID, 76), nil
 	}
 
 	g := b.getOrCreateGroupMetadata(req.GroupID)
 	g.Leave(req.MemberID)
 
-	return kafkaprotocol.HandleLeaveGroupResponse(correlationId, 0), nil
+	return kafkaprotocol.HandleLeaveGroupResponse(correlationID, 0), nil
 }

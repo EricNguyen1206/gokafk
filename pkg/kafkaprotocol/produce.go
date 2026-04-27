@@ -99,9 +99,9 @@ func ParseProduceRequest(reqData []byte) ([]ProduceRecord, error) {
 
 // Return encoded response message for ProduceResponse in binary
 // Message format: Correlation ID + Topic + Partition + ErrorCode + BaseOffset + LogAppendTimeMs + LogStartOffset + RecordErrors + ErrorMessage + ThrottleTime
-func HandleProduceResponse(correlationId int32, topic string, partition int32, offset int64) []byte {
+func HandleProduceResponse(correlationID int32, topic string, partition int32, offset int64) []byte {
 	enc := NewEncoder()
-	enc.WriteInt32(correlationId) // Correlation ID
+	enc.WriteInt32(correlationID) // Correlation ID
 
 	// Responses Array (topics)
 	enc.WriteInt32(1)

@@ -34,13 +34,13 @@ func (cg *ConsumerGroup) AddMember(conn net.Conn) string {
 	cg.mu.Lock()
 	defer cg.mu.Unlock()
 
-	memberId := conn.RemoteAddr().String()
-	cg.members[memberId] = &Consumer{
-		memberID: memberId,
+	memberID := conn.RemoteAddr().String()
+	cg.members[memberID] = &Consumer{
+		memberID: memberID,
 		conn:     conn,
 		joinedAt: time.Now(),
 	}
-	return memberId
+	return memberID
 }
 
 func (cg *ConsumerGroup) RemoveMember(memberID string) {
