@@ -59,7 +59,7 @@ type OffsetFetchResponseEntry struct {
 }
 
 // HandleOffsetFetchResponse encodes an OffsetFetch response with multi-topic/multi-partition support.
-// Wire format:
+// Wire format (v0-v4):
 //
 //	CorrelationId      int32
 //	throttle_time_ms   int32
@@ -68,7 +68,6 @@ type OffsetFetchResponseEntry struct {
 //	  Partitions Array:
 //	    PartitionIndex int32
 //	    CommittedOffset int64
-//	    LeaderEpoch    int32
 //	    Metadata       string
 //	    ErrorCode      int16
 //	ErrorCode          int16 (top-level)
@@ -84,8 +83,11 @@ func HandleOffsetFetchResponse(correlationID int32, entries []OffsetFetchRespons
 		for _, p := range entry.Partitions {
 			enc.WriteInt32(p.Partition) // PartitionIndex
 			enc.WriteInt64(p.Offset)    // CommittedOffset
-			enc.WriteInt32(-1)          // LeaderEpoch
-			enc.WriteString(p.Metadata) // Metadata
+			if p.Metadata == "" {
+				enc.WriteInt16(-1) // Null metadata
+			} else {
+				enc.WriteString(p.Metadata)
+			}
 			enc.WriteInt16(p.ErrorCode) // ErrorCode
 		}
 	}

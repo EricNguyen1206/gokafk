@@ -35,6 +35,7 @@ func HandleLeaveGroupResponse(correlationID int32, errorCode int16) []byte {
 
 	enc.WriteInt32(0)         // throttle_time_ms
 	enc.WriteInt16(errorCode) // ErrorCode
+	enc.WriteInt32(0)         // Members array length (v3+)
 
 	return enc.Bytes()
 }

@@ -1,4 +1,4 @@
-// test/kafkajs/helpers/kafka.js
+// test/kafkajs/kafka.js
 const { Kafka, logLevel } = require('kafkajs')
 
 const BROKER = process.env.KAFKA_BROKER || 'localhost:10000'
