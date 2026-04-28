@@ -12,8 +12,18 @@ import (
 	"gokafk/internal/config"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
-	// Enable debug logging so we can trace protocol bytes
+	if len(os.Args) == 2 && os.Args[1] == "version" {
+		fmt.Printf("gokafk %s (commit: %s, built: %s)\n", version, commit, date)
+		os.Exit(0)
+	}
+
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})))

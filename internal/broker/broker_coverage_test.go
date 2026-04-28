@@ -16,7 +16,7 @@ func newTestBroker(t *testing.T) *Broker {
 	return NewBroker(&config.Config{
 		BrokerPort:    10000,
 		DataDir:       t.TempDir(),
-		NumPartitions: 3,
+		NumPartitions: 3, // explicit 3 partitions for tests that need multi-partition
 	})
 }
 
@@ -24,7 +24,7 @@ func TestNewBroker(t *testing.T) {
 	b := NewBroker(&config.Config{
 		BrokerPort:    0,
 		DataDir:       t.TempDir(),
-		NumPartitions: 3,
+		NumPartitions: 3, // explicit 3 partitions for tests that need multi-partition
 	})
 	if b == nil {
 		t.Fatal("NewBroker returned nil")

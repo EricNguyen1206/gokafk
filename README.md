@@ -1,318 +1,105 @@
 # gokafk
 
-A Kafka-compatible message broker built from scratch in Go. Implements the real Apache Kafka wire protocol, enabling compatibility with standard Kafka clients like [KafkaJS](https://kafka.js.org/).
+A Kafka broker built from scratch in Go. Real Kafka wire protocol — any Kafka client connects directly.
 
-## Features
+## TL;DR
 
-- **Kafka Wire Protocol**: Implements the actual Kafka binary protocol — not a custom one. Standard Kafka clients connect and work out of the box.
-- **Append-Only Log Storage**: High-performance disk storage using binary-frame segment files with in-memory sparse indexing for O(1) offset lookups.
-- **Partitioned Topics**: Topics are split into configurable partitions (default: 3) for concurrent read/write throughput.
-- **Key-Based Routing**: Deterministic FNV-32a hashing ensures messages with the same key always land on the same partition.
-- **Consumer Group Coordination**: Full group protocol — JoinGroup, SyncGroup, LeaveGroup, Heartbeat — with leader election, generation tracking, and channel-based follower synchronization.
-- **Persistent Consumer Offsets**: Offsets are committed to an internal `__consumer_offsets` topic and automatically recovered on broker restart.
-- **KafkaJS Tested**: End-to-end integration tests with KafkaJS covering produce, fetch, consumer groups, and offset management.
+```
+go run cmd/gokafk/main.go server    # start broker on :10000
+go test -v -race ./...              # run all tests
+docker compose up --build           # broker + integration tests
+```
 
-## Supported Kafka APIs
+## What it does
 
-| API | Key | Versions | Description |
-|-----|-----|----------|-------------|
-| Produce | 0 | 0-8 | Write messages to topics |
-| Fetch | 1 | 0-11 | Read messages from partitions |
-| ListOffsets | 2 | 0-5 | Query earliest/latest/timestamp offsets |
-| Metadata | 3 | 0-9 | Discover topics, partitions, and brokers |
-| OffsetCommit | 8 | 0-8 | Commit consumer offsets |
-| OffsetFetch | 9 | 0-5 | Retrieve committed offsets |
-| FindCoordinator | 10 | 0-3 | Locate group coordinator |
-| JoinGroup | 11 | 0-7 | Join a consumer group |
-| Heartbeat | 12 | 0-4 | Keep consumer group membership alive |
-| LeaveGroup | 13 | 0-4 | Leave a consumer group |
-| SyncGroup | 14 | 0-5 | Distribute partition assignments |
-| ApiVersions | 18 | 0-3 | Negotiate supported API versions |
+- Implements the **real Kafka binary protocol** (not a custom API) — KafkaJS, Sarama, etc. work out of the box
+- **Append-only log storage** on disk with sparse index for O(1) offset lookups
+- **Partitioned topics** with FNV-32a key-based routing (same key → same partition)
+- **Consumer groups**: full protocol (JoinGroup → SyncGroup → Heartbeat → LeaveGroup) with leader election & generation tracking
+- **Persistent offsets**: committed to `__consumer_offsets` topic, recovered on restart
+
+## 12 Kafka APIs
+
+Produce · Fetch · ListOffsets · Metadata · OffsetCommit · OffsetFetch · FindCoordinator · JoinGroup · Heartbeat · LeaveGroup · SyncGroup · ApiVersions
 
 ## Architecture
 
-```mermaid
-graph LR
-    subgraph Clients
-        P["Producer\n(KafkaJS / any Kafka client)"]
-        C["Consumer\n(KafkaJS / any Kafka client)"]
-    end
-
-    subgraph Broker["Broker :10000"]
-        direction TB
-        CODEC["KafkaCodec\n(length-prefixed framing)"]
-        ROUTER["routeMessage()\n(API key dispatch)"]
-
-        subgraph Protocol["Kafka Protocol Layer"]
-            direction TB
-            PRODUCE["Produce"]
-            FETCH["Fetch"]
-            GRP["JoinGroup / SyncGroup\nLeaveGroup / Heartbeat"]
-            OFFSET["OffsetCommit / OffsetFetch"]
-            META["Metadata / ApiVersions\nFindCoordinator / ListOffsets"]
-        end
-
-        subgraph Topics["Topic Management"]
-            direction TB
-            T1["Topic (e.g. 'orders')"]
-            P0["Partition 0"]
-            P1["Partition 1"]
-            P2["Partition 2"]
-            T1 --> P0
-            T1 --> P1
-            T1 --> P2
-        end
-
-        subgraph Coordination["Group Coordination"]
-            CG["GroupMetadata\n(leader election, generation tracking)"]
-            CGO["ConsumerGroup\n(offset tracking per partition)"]
-        end
-
-        CODEC --> ROUTER
-        ROUTER --> Protocol
-        PRODUCE --> Topics
-        FETCH --> Topics
-        GRP --> Coordination
-        OFFSET --> CGO
-    end
-
-    subgraph Storage["Disk Storage"]
-        S0[("partition_0/topic_0.log")]
-        S1[("partition_1/topic_1.log")]
-        S2[("partition_2/topic_2.log")]
-        P0 --> S0
-        P1 --> S1
-        P2 --> S2
-    end
-
-    P -- "TCP (Kafka protocol)" --> CODEC
-    C -- "TCP (Kafka protocol)" --> CODEC
+```
+  Producer ──TCP──→ ┌─────────────────────────────┐
+  Consumer ──TCP──→ │  Broker (:10000)             │
+                    │  ┌─────────────────────────┐ │
+                    │  │ KafkaCodec → routeMessage│ │
+                    │  │   ├ Produce → Topic      │ │
+                    │  │   ├ Fetch    → Topic      │ │
+                    │  │   ├ JoinGroup → GroupMeta │ │──→ [offset|ts|len|data]
+                    │  │   ├ OffsetCommit → CG     │ │     segment.log
+                    │  │   └ ...                   │ │
+                    │  └─────────────────────────┘ │
+                    └─────────────────────────────┘
 ```
 
-## Message Flow
+**3 layers:**
+1. **Protocol** (`pkg/kafkaprotocol/`) — encode/decode Kafka binary frames, parse requests, build responses
+2. **Broker** (`internal/broker/`) — TCP server, route by API key, topic/partition management, consumer group coordination
+3. **Storage** (`internal/storage/`) — append-only segment files with in-memory sparse index
 
-### Producer Flow
+**Consumer group flow:** Metadata → FindCoordinator → JoinGroup → SyncGroup → Heartbeat (loop) → Fetch → OffsetCommit → LeaveGroup
 
-```
-PRODUCER (Client)                  BROKER (Server)                   STORAGE (Disk)
-      |                                  |                                  |
-      |------- 1. TCP Connect ---------->| (Accept & handleConnection)      |
-      |                                  |                                  |
-      |------- 2. ApiVersions Request -->| (Optional - Negotiate version)   |
-      |<------ 3. ApiVersions Response --|                                  |
-      |                                  |                                  |
-      |------- 4. Metadata Request ----->| (Discover topics & partitions)   |
-      |<------ 5. Metadata Response -----| (orders: P0)                    |
-      |                                  |                                  |
-      |------- 6. PRODUCE Request ------>| [Phase: Ingestion]               |
-      |       (Topic: "orders", P:0)     |  - codec.ReadRequest(ctx)        |
-      |       (Key: "u1", Val: "{...}")  |  - ParseProduceRequest (Decode)  |
-      |                                  |        |                         |
-      |                                  | [Phase: Processing]              |
-      |                                  |  - handleProduce                 |
-      |                                  |  - tp.Append(Key, Value)         |
-      |                                  |        |                         |
-      |                                  |        |---- 7. Write Frame ---->|
-      |                                  |        |   [Offset|Timestamp|Size|Data]
-      |                                  |        |<--- 8. Return Offset ---|
-      |                                  |        |        (Offset: 1024)   |
-      |                                  | [Phase: Response]                |
-      |                                  |  - HandleProduceResponse (Encode)|
-      |<------ 9. PRODUCE Response ------|  - codec.WriteResponse(resp)     |
-      |       (Offset = 1024, Error = 0) |                                  |
-      |                                  |                                  |
-```
-
-### Consumer Flow
+## Project structure
 
 ```
-CONSUMER (Client)                BROKER (Server)                      STORAGE (Disk)
-      |                                  |                                  |
-      |-- 1. Metadata("orders") -------->| (Discover topics & partitions)   |
-      |<-- 2. "orders: P0" ---------------|                                  |
-      |                                  |                                  |
-      |-- 3. FindCoordinator(GroupID) -->| (kafkaprotocol.HandleFindCoordinator)
-      |<-- 4. "Node 0 is Coordinator" ---| (Locate broker managing the group) |
-      |                                  |                                  |
-      |-- 5. JoinGroup("order-processor")| (broker.handleJoinGroup)         |
-      |      (Request to join group)     | - Register member, elect leader  |
-      |<-- 6. "Joined - Member ID, Gen"  |                                  |
-      |                                  |                                  |
-      |-- 7. SyncGroup(Assignments) ---->| (broker.handleSyncGroup)         |
-      |<-- 8. "Assignment bytes (P:0)"   | (Opaque bytes from leader)       |
-      |                                  |                                  |
-      |-- 9. Heartbeat(Generation) ----->| (broker.handleHeartbeat)         |
-      |      (Keep membership alive)     | - Stateless, always returns OK   |
-      |<-- 10. "Heartbeat OK" -----------|                                  |
-      |       ... (periodic)             |                                  |
-      |                                  |                                  |
-      |-- 11. OffsetFetch(orders, P:0) ->| (broker.handleOffsetFetch)       |
-      |<-- 12. "Last Committed: 1024" ---| (Query: "Where did I leave off?")|
-      |                                  |                                  |
-      |-- 13. ListOffsets(orders, P:0) ->| (broker.handleListOffsets)       |
-      |      (Query: "What offsets exist?")                                 |
-      |<-- 14. "Earliest: 0, Latest: 1050"| (Determine readable range)     |
-      |                                  |                                  |
-      |-- 15. FETCH(orders, P:0, O:1024) | (broker.handleFetch)             |
-      |      (Pull single message)       |        |                         |
-      |                                  | 16. tp.ReadFromPartition(0, 1024)|
-      |                                  |        |------------------------>|
-      |                                  |        | [Read file orders/0.log]|
-      |                                  |        |<------------------------|
-      |<-- 17. RecordBatch (Data Bytes) -| (Actual message data payload)    |
-      |                                  |                                  |
-      |-- 18. OffsetCommit(orders, P:0, O:1025) -> (broker.handleOffsetCommit)
-      |      (Notify: "Processed 1024")  |        |                         |
-      |                                  | 19. commitConsumerOffset         |
-      |                                  |        |------------------------>|
-      |                                  |        | [Write to __consumer_offsets]
-      |<-- 20. "Commit OK" --------------|                                  |
-      |                                  |                                  |
-      |     ... (repeat fetch/commit ... |                                  |
-      |                                  |                                  |
-      |-- 21. LeaveGroup(GroupID) ------>| (broker.handleLeaveGroup)        |
-      |      (Graceful shutdown)         | - Remove member, trigger rebalance
-      |<-- 22. "Leave OK" --------------|                                  |
+cmd/gokafk/main.go              entry point
+pkg/kafkaprotocol/              wire protocol (encoder, decoder, 12 API handlers)
+internal/broker/                TCP server, routing, topics, consumer groups
+internal/storage/               append-only segment with sparse index
+internal/config/                defaults (port, data dir, partitions)
+test/kafkajs/                   KafkaJS integration tests
+.github/workflows/              CI: build+test, GoReleaser
 ```
 
-## Design Decisions
+~2,700 lines production · ~2,750 lines tests · 87%+ coverage
 
-### Kafka Wire Protocol Compatibility
-Rather than inventing a custom protocol, gokafk implements the real Kafka binary protocol. This means any Kafka client library (KafkaJS, Sarama, librdkafka, etc.) can connect directly. The broker uses length-prefixed framing with Big-Endian encoding, matching the [Kafka protocol spec](https://kafka.apache.org/protocol.html).
-
-### Append-Only Segment Logs
-
-Data is written sequentially (append-only) to binary-frame segment files. Each frame stores: `[offset(8) | timestamp(8) | data_length(4) | data(N)]`. An in-memory sparse index maps `offset → byte_position` for O(1) reads. Index is automatically rebuilt from the log file on broker restart.
-
-### Partitions & Key-Based Routing
-
-Topics are sharded into partitions (default: 3, configurable). Using `FNV-32a`, messages with the same key are consistently routed to the same partition — guaranteeing per-key ordering while allowing horizontal read throughput.
-
-### Two-Layer Consumer Group Architecture
-
-Consumer groups are managed at two levels:
-- **`GroupMetadata`** (broker-level): Handles the group protocol — JoinGroup/SyncGroup/LeaveGroup. Manages leader election, generation tracking, and assignment distribution via channel-based synchronization.
-- **`ConsumerGroup`** (topic-level): Tracks committed offsets per partition. Uses Range Assignor for partition distribution.
-
-The broker acts as a pass-through for partition assignments: the leader consumer computes assignments, the broker stores and distributes them.
-
-### Persistent Offset Recovery
-
-Consumer offsets are persisted to an internal `__consumer_offsets` topic using key-value encoding (`groupID:topic:partition → offset`). On broker restart, offsets are replayed from disk and restored to memory — preventing duplicate consumption.
-
-### Pull-Based Consumption
-
-Consumers pull messages at their own pace via the Fetch API, naturally applying backpressure. The broker remains stateless regarding consumption progress — consumers track their own offsets and commit when ready.
-
-## Usage
-
-### Start the broker
+## Quick start
 
 ```bash
 go run cmd/gokafk/main.go server
 ```
 
-The broker listens on `:10000` by default.
-
-### Connect with KafkaJS
-
 ```javascript
 const { Kafka } = require('kafkajs')
-
-const kafka = new Kafka({
-  clientId: 'my-app',
-  brokers: ['localhost:10000'],
-})
+const kafka = new Kafka({ brokers: ['localhost:10000'] })
 
 // Produce
-const producer = kafka.producer()
-await producer.connect()
-await producer.send({
-  topic: 'my-topic',
-  messages: [{ key: 'user-1', value: 'Hello gokafk!' }],
-})
+const p = kafka.producer()
+await p.connect()
+await p.send({ topic: 'orders', messages: [{ key: 'u1', value: 'hello' }] })
 
 // Consume
-const consumer = kafka.consumer({ groupId: 'my-group' })
-await consumer.connect()
-await consumer.subscribe({ topic: 'my-topic', fromBeginning: true })
-await consumer.run({
-  eachMessage: async ({ topic, partition, message }) => {
-    console.log(message.value.toString())
-  },
-})
+const c = kafka.consumer({ groupId: 'orders-group' })
+await c.connect()
+await c.subscribe({ topic: 'orders', fromBeginning: true })
+await c.run({ eachMessage: async ({ message }) => console.log(message.value.toString()) })
 ```
 
-### Using Docker
+## Key features
 
-```bash
-# Build & run broker
-docker compose up -d broker
+| Feature | Implementation |
+|----------|-----|
+| Real Kafka protocol | Any client works. No SDK lock-in. |
+| Append-only segments | Sequential writes = fast. Sparse index = O(1) reads. |
+| FNV-32a partitioning | Same key → same partition → per-key ordering. |
+| `__consumer_offsets` topic | Offsets survive restarts. Same pattern as real Kafka. |
+| Pull-based consumption | Natural backpressure. Consumers own their pace. |
+| 2-layer group model | GroupMetadata = protocol. ConsumerGroup = offsets. Clean separation. |
 
-# View logs
-docker compose logs -f broker
+## Stats
 
-# Stop
-docker compose down
-```
-
-Or build manually:
-
-```bash
-docker build -t gokafk:dev .
-docker run -d --name gokafk-broker -p 10000:10000 gokafk:dev
-```
-
-### Run integration tests
-
-```bash
-# Starts broker + KafkaJS test suite via Docker Compose
-docker compose up --build --abort-on-container-exit test-runner
-```
-
-## Project Structure
-
-```
-gokafk/
-├── cmd/gokafk/main.go               # Entry point (server command)
-├── pkg/
-│   └── kafkaprotocol/                # Kafka wire protocol implementation
-│       ├── codec.go                  #   Length-prefixed framing & request header parsing
-│       ├── primitives.go             #   Encoder/Decoder for Kafka primitives (int8-64, string, bytes, varint)
-│       ├── types.go                  #   API key constants
-│       ├── apiversions.go            #   ApiVersions response
-│       ├── metadata.go               #   Metadata response
-│       ├── produce.go                #   Produce request/response
-│       ├── fetch.go                  #   Fetch request/response
-│       ├── listoffsets.go            #   ListOffsets request/response
-│       ├── findcoordinator.go        #   FindCoordinator response
-│       ├── joingroup.go              #   JoinGroup request/response (v5)
-│       ├── syncgroup.go              #   SyncGroup request/response (v3)
-│       ├── leavegroup.go             #   LeaveGroup request/response (v2)
-│       ├── heartbeat.go              #   Heartbeat request/response (v1)
-│       ├── handle_offset_commit.go   #   OffsetCommit request/response
-│       ├── offset_fetch.go           #   OffsetFetch request/response
-│       └── group_protocol_test.go    #   Group protocol unit tests
-├── internal/
-│   ├── broker/                       # Core broker logic
-│   │   ├── broker.go                 #   TCP server, connection handling, lifecycle
-│   │   ├── handler.go                #   API key routing & request handlers
-│   │   ├── topic.go                  #   Topic management, key-based partition routing
-│   │   ├── partition.go              #   Partition wrapper over storage segments
-│   │   ├── group_metadata.go         #   GroupMetadata: JoinGroup/SyncGroup/LeaveGroup protocol
-│   │   ├── consumer_group.go         #   ConsumerGroup: offset tracking & range assignor
-│   │   └── consumer_offsets.go       #   Persistent offset storage via __consumer_offsets topic
-│   ├── config/                       # Configuration defaults
-│   └── storage/                      # Disk storage engine
-│       ├── store.go                  #   Store interface
-│       └── segment.go                #   Append-only binary segment with sparse index
-├── test/
-│   └── kafkajs/                      # KafkaJS integration tests
-│       └── getting-started.test.js   #   End-to-end: produce, consume, consumer groups
-├── Dockerfile                        # Multi-stage build
-└── docker-compose.yml                # Broker + test runner services
-```
-
-## Read More
+| | |
+|---|---|
+| Go | 1.23 |
+| Lines | ~5,500 (prod + test) |
+| Test ratio | ~1:1 |
+| Coverage | 87%+ across packages |
+| APIs | 12 Kafka APIs |
 
 > [Wiki](https://github.com/EricNguyen1206/gokafk/wiki)
