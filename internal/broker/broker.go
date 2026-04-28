@@ -118,8 +118,15 @@ func (b *Broker) handleConnection(ctx context.Context, conn net.Conn) {
 	}
 }
 
-// gets or creates a topic with the given topic's name.
 func (b *Broker) getOrCreateTopic(topic string) (*Topic, error) {
+	return b.getOrCreateTopicWithPartitions(topic, b.cfg.NumPartitions)
+}
+
+func (b *Broker) getOrCreateTopicWithPartitions(topic string, numPartitions int) (*Topic, error) {
+	if numPartitions <= 0 {
+		return nil, fmt.Errorf("invalid partition count %d: must be > 0", numPartitions)
+	}
+
 	b.mu.RLock()
 	tp, ok := b.topics[topic]
 	b.mu.RUnlock()
@@ -136,7 +143,7 @@ func (b *Broker) getOrCreateTopic(topic string) (*Topic, error) {
 		return tp, nil
 	}
 
-	tp, err := NewTopic(topic, b.cfg.DataDir, b.cfg.NumPartitions)
+	tp, err := NewTopic(topic, b.cfg.DataDir, numPartitions)
 	if err != nil {
 		return nil, err
 	}

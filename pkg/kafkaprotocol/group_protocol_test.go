@@ -198,3 +198,74 @@ func TestLeaveGroupResponseRoundTrip(t *testing.T) {
 		t.Errorf("ErrorCode = %d, want 0", errCode)
 	}
 }
+
+func TestParseJoinGroupRequest_Truncated(t *testing.T) {
+	_, err := ParseJoinGroupRequest([]byte{})
+	if err == nil {
+		t.Error("expected error for empty data")
+	}
+
+	enc := NewEncoder()
+	enc.WriteString("group")
+	// Missing remaining fields
+	_, err = ParseJoinGroupRequest(enc.Bytes())
+	if err == nil {
+		t.Error("expected error for truncated data after GroupID")
+	}
+}
+
+func TestParseJoinGroupRequest_MultipleProtocols(t *testing.T) {
+	enc := NewEncoder()
+	enc.WriteString("group")
+	enc.WriteInt32(30000)
+	enc.WriteInt32(60000)
+	enc.WriteString("member-1")
+	enc.WriteString("")
+	enc.WriteString("consumer")
+	enc.WriteInt32(2)
+	enc.WriteString("range")
+	enc.WriteBytes([]byte{0x01})
+	enc.WriteString("roundrobin")
+	enc.WriteBytes([]byte{0x02})
+
+	req, err := ParseJoinGroupRequest(enc.Bytes())
+	if err != nil {
+		t.Fatalf("ParseJoinGroupRequest: %v", err)
+	}
+	if len(req.Protocols) != 2 {
+		t.Errorf("Protocols: want 2, got %d", len(req.Protocols))
+	}
+	if req.Protocols[1].Name != "roundrobin" {
+		t.Errorf("Protocol[1].Name: want 'roundrobin', got %q", req.Protocols[1].Name)
+	}
+}
+
+func TestParseSyncGroupRequest_Truncated(t *testing.T) {
+	_, err := ParseSyncGroupRequest([]byte{})
+	if err == nil {
+		t.Error("expected error for empty data")
+	}
+
+	enc := NewEncoder()
+	enc.WriteString("group")
+	// Missing remaining fields
+	_, err = ParseSyncGroupRequest(enc.Bytes())
+	if err == nil {
+		t.Error("expected error for truncated data after GroupID")
+	}
+}
+
+func TestParseLeaveGroupRequest_Truncated(t *testing.T) {
+	_, err := ParseLeaveGroupRequest([]byte{})
+	if err == nil {
+		t.Error("expected error for empty data")
+	}
+
+	enc := NewEncoder()
+	enc.WriteString("group")
+	// Missing MemberID
+	_, err = ParseLeaveGroupRequest(enc.Bytes())
+	if err == nil {
+		t.Error("expected error for truncated data after GroupID")
+	}
+}

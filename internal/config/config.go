@@ -3,7 +3,7 @@ package config
 const (
 	DefaultBrokerPort    = 10000
 	DefaultDataDir       = "./data/logs"
-	DefaultNumPartitions = 3
+	DefaultNumPartitions = 1
 )
 
 type Config struct {
