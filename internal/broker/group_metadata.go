@@ -57,8 +57,8 @@ func (g *GroupMetadata) Join(memberID, clientID string, protocols []kafkaprotoco
 		protocols: protocols,
 	}
 
-	// First member becomes leader
-	if g.leaderID == "" || len(g.members) == 1 {
+	// Elect leader if none exists or current leader is no longer a member
+	if _, ok := g.members[g.leaderID]; !ok {
 		g.leaderID = memberID
 	}
 
@@ -108,13 +108,18 @@ func (g *GroupMetadata) Sync(memberID string, assignments []kafkaprotocol.SyncGr
 
 	isLeader := memberID == g.leaderID
 
-	if isLeader && len(assignments) > 0 {
+	if isLeader {
 		// Leader provides assignments for all members
 		for _, a := range assignments {
 			g.assignments[a.MemberID] = a.Assignment
 		}
-		// Signal followers that assignments are ready
-		close(g.assignReady)
+		// Signal followers that assignments are ready (safely)
+		select {
+		case <-g.assignReady:
+			// Already closed
+		default:
+			close(g.assignReady)
+		}
 
 		slog.Info("group sync (leader)",
 			"group", g.groupID,

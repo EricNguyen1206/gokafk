@@ -41,13 +41,17 @@ func ParseProduceRequest(reqData []byte) ([]ProduceRecord, error) {
 
 			// TODO: Implement proper RecordBatch v2 parsing.
 			// Current implementation is a naive "hack" for the very first version:
-			// - Skips 61 bytes of RecordBatch header (BaseOffset to RecordsArrayLength).
+			// - Skips 57 bytes of RecordBatch header (BaseOffset through BaseSequence).
+			// - Then reads NumRecords (4 bytes) separately below.
 			// - Assumes one record per batch for testing purposes.
-			// Actually KafkaJS sends modern RecordBatches (Magic=2) which require 61 bytes header skip.
-			if dec.Remaining() < 61 {
+			// RecordBatch v2 header: BaseOffset(8) + BatchLength(4) + PartitionLeaderEpoch(4) +
+			//   Magic(1) + CRC(4) + Attributes(2) + LastOffsetDelta(4) + FirstTimestamp(8) +
+			//   MaxTimestamp(8) + ProducerId(8) + ProducerEpoch(2) + BaseSequence(4) = 57 bytes
+			// Then NumRecords(4) is read by ReadInt32 below.
+			if dec.Remaining() < 61 { // 57 header + 4 for NumRecords
 				return nil, fmt.Errorf("batch too small")
 			}
-			dec.pos += 61
+			dec.pos += 57
 
 			// Records Array
 			numRecs, _ := dec.ReadInt32()
