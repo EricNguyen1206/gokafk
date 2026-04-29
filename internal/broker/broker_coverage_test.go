@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"gokafk/internal/config"
-	"gokafk/pkg/kafkaprotocol"
+	"gokafk/pkg/proto"
 )
 
 func newTestBroker(t *testing.T) *Broker {
@@ -184,7 +184,7 @@ func TestBroker_HandleConnection_APIVersions(t *testing.T) {
 	defer conn.Close()
 
 	// Send ApiVersions request (key=18, v3)
-	req := kafkaprotocol.NewEncoder()
+	req := proto.NewEncoder()
 	req.WriteInt16(18) // APIKey
 	req.WriteInt16(3)  // APIVersion
 	req.WriteInt32(1)  // CorrelationID

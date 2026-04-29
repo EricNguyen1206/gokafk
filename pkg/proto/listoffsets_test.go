@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 import "testing"
 
@@ -17,14 +17,14 @@ func TestHandleListOffsetsResponse(t *testing.T) {
 
 func TestParseListOffsetsRequest(t *testing.T) {
 	enc := NewEncoder()
-	enc.WriteInt32(-1)     // ReplicaID
-	enc.WriteInt8(0)       // IsolationLevel
-	enc.WriteInt32(1)      // NumTopics
+	enc.WriteInt32(-1) // ReplicaID
+	enc.WriteInt8(0)   // IsolationLevel
+	enc.WriteInt32(1)  // NumTopics
 	enc.WriteString("test")
-	enc.WriteInt32(1)      // NumPartitions
-	enc.WriteInt32(0)      // Partition
-	enc.WriteInt32(-1)     // CurrentLeaderEpoch
-	enc.WriteInt64(-1)     // Timestamp = Latest
+	enc.WriteInt32(1)  // NumPartitions
+	enc.WriteInt32(0)  // Partition
+	enc.WriteInt32(-1) // CurrentLeaderEpoch
+	enc.WriteInt64(-1) // Timestamp = Latest
 
 	reqs, err := ParseListOffsetsRequest(enc.Bytes())
 	if err != nil {

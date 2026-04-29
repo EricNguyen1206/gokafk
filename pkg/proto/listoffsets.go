@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 // ListOffsetsRequestInfo holds parsed info from a single partition in a ListOffsets request.
 type ListOffsetsRequestInfo struct {

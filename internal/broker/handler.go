@@ -6,46 +6,46 @@ import (
 	"log/slog"
 	"net"
 
-	"gokafk/pkg/kafkaprotocol"
+	"gokafk/pkg/proto"
 )
 
-func (b *Broker) routeMessage(ctx context.Context, header *kafkaprotocol.RequestHeader, data []byte, conn net.Conn) ([]byte, error) {
+func (b *Broker) routeMessage(ctx context.Context, header *proto.RequestHeader, data []byte, conn net.Conn) ([]byte, error) {
 	switch header.APIKey {
-	case kafkaprotocol.ApiKeyProduce: // 0
+	case proto.ApiKeyProduce: // 0
 		return b.handleProduce(header.CorrelationID, data)
 
-	case kafkaprotocol.ApiKeyFetch: // 1
+	case proto.ApiKeyFetch: // 1
 		return b.handleFetch(header.CorrelationID, data)
 
-	case kafkaprotocol.ApiKeyListOffsets: // 2
+	case proto.ApiKeyListOffsets: // 2
 		return b.handleListOffsets(header.CorrelationID, data)
 
-	case kafkaprotocol.ApiKeyMetadata: // 3
-		return kafkaprotocol.HandleMetadata(header.CorrelationID, data), nil
+	case proto.ApiKeyMetadata: // 3
+		return proto.HandleMetadata(header.CorrelationID, data), nil
 
-	case kafkaprotocol.ApiKeyOffsetCommit: // 8
+	case proto.ApiKeyOffsetCommit: // 8
 		return b.handleOffsetCommit(header.CorrelationID, data)
 
-	case kafkaprotocol.ApiKeyOffsetFetch: // 9
+	case proto.ApiKeyOffsetFetch: // 9
 		return b.handleOffsetFetch(header.CorrelationID, data)
 
-	case kafkaprotocol.ApiKeyFindCoordinator: // 10
-		return kafkaprotocol.HandleFindCoordinator(header.CorrelationID), nil
+	case proto.ApiKeyFindCoordinator: // 10
+		return proto.HandleFindCoordinator(header.CorrelationID), nil
 
-	case kafkaprotocol.ApiKeyJoinGroup: // 11
+	case proto.ApiKeyJoinGroup: // 11
 		return b.handleJoinGroup(header.CorrelationID, data)
 
-	case kafkaprotocol.ApiKeyHeartbeat: // 12
-		return kafkaprotocol.HandleHeartbeat(header.CorrelationID), nil
+	case proto.ApiKeyHeartbeat: // 12
+		return proto.HandleHeartbeat(header.CorrelationID), nil
 
-	case kafkaprotocol.ApiKeyLeaveGroup: // 13
+	case proto.ApiKeyLeaveGroup: // 13
 		return b.handleLeaveGroup(header.CorrelationID, data)
 
-	case kafkaprotocol.ApiKeySyncGroup: // 14
+	case proto.ApiKeySyncGroup: // 14
 		return b.handleSyncGroup(header.CorrelationID, data)
 
-	case kafkaprotocol.ApiKeyApiVersions: // 18
-		return kafkaprotocol.HandleApiVersions(header.CorrelationID), nil
+	case proto.ApiKeyApiVersions: // 18
+		return proto.HandleApiVersions(header.CorrelationID), nil
 
 	default:
 		slog.Warn("unsupported api key", "key", header.APIKey)
@@ -56,49 +56,49 @@ func (b *Broker) routeMessage(ctx context.Context, header *kafkaprotocol.Request
 
 func (b *Broker) handleProduce(correlationID int32, data []byte) ([]byte, error) {
 	slog.Debug("handleProduce", "bytes", len(data), "raw", data[:min(len(data), 40)])
-	records, err := kafkaprotocol.ParseProduceRequest(data)
+	records, err := proto.ParseProduceRequest(data)
 	if err != nil {
 		slog.Error("parse produce failed", "err", err)
 		// Not crash connection, just return error response
-		return kafkaprotocol.HandleProduceResponse(correlationID, "unknown", 0, -1), nil
+		return proto.HandleProduceResponse(correlationID, "unknown", 0, -1), nil
 	}
 
 	if len(records) == 0 {
-		return kafkaprotocol.HandleProduceResponse(correlationID, "test-topic", 0, 0), nil
+		return proto.HandleProduceResponse(correlationID, "test-topic", 0, 0), nil
 	}
 	// TODO: Support produce multiple records
 	rec := records[0]
 	tp, err := b.getOrCreateTopic(rec.Topic)
 	if err != nil {
 		slog.Error("get topic failed", "topic", rec.Topic, "err", err)
-		return kafkaprotocol.HandleProduceResponse(correlationID, rec.Topic, 0, -1), nil
+		return proto.HandleProduceResponse(correlationID, rec.Topic, 0, -1), nil
 	}
 
 	_, offset, err := tp.Append(rec.Key, rec.Value)
 	if err != nil {
 		slog.Error("append failed", "err", err)
-		return kafkaprotocol.HandleProduceResponse(correlationID, rec.Topic, 0, -1), nil
+		return proto.HandleProduceResponse(correlationID, rec.Topic, 0, -1), nil
 	}
 	slog.Info("produced", "topic", rec.Topic, "offset", offset, "val", string(rec.Value))
 
-	return kafkaprotocol.HandleProduceResponse(correlationID, rec.Topic, rec.Partition, offset), nil
+	return proto.HandleProduceResponse(correlationID, rec.Topic, rec.Partition, offset), nil
 }
 
 func (b *Broker) handleFetch(correlationID int32, data []byte) ([]byte, error) {
-	fetchReqs, err := kafkaprotocol.ParseFetchRequest(data)
+	fetchReqs, err := proto.ParseFetchRequest(data)
 	if err != nil {
 		return nil, fmt.Errorf("parse fetch: %w", err)
 	}
 
 	if len(fetchReqs) == 0 {
-		return kafkaprotocol.HandleFetchResponse(correlationID, "test-topic", 0, nil, 0), nil
+		return proto.HandleFetchResponse(correlationID, "test-topic", 0, nil, 0), nil
 	}
 	// TODO: Support fetch multiple records
 	req := fetchReqs[0]
 	tp, err := b.getOrCreateTopic(req.Topic)
 	if err != nil {
 		// Topic doesn't exist yet
-		return kafkaprotocol.HandleFetchResponse(correlationID, req.Topic, req.Partition, nil, 0), nil
+		return proto.HandleFetchResponse(correlationID, req.Topic, req.Partition, nil, 0), nil
 	}
 
 	// read one message for simplification, starting from offset
@@ -108,11 +108,11 @@ func (b *Broker) handleFetch(correlationID int32, data []byte) ([]byte, error) {
 		msgs = append(msgs, msgData)
 	}
 
-	return kafkaprotocol.HandleFetchResponse(correlationID, req.Topic, req.Partition, msgs, req.Offset), nil
+	return proto.HandleFetchResponse(correlationID, req.Topic, req.Partition, msgs, req.Offset), nil
 }
 
 func (b *Broker) handleOffsetCommit(correlationID int32, data []byte) ([]byte, error) {
-	groupID, reqs, err := kafkaprotocol.ParseOffsetCommitRequest(data)
+	groupID, reqs, err := proto.ParseOffsetCommitRequest(data)
 	if err != nil {
 		slog.Error("parse offset commit failed", "err", err)
 		return nil, fmt.Errorf("parse offset commit: %w", err)
@@ -125,19 +125,19 @@ func (b *Broker) handleOffsetCommit(correlationID int32, data []byte) ([]byte, e
 		}
 	}
 
-	return kafkaprotocol.HandleOffsetCommitResponse(correlationID), nil
+	return proto.HandleOffsetCommitResponse(correlationID), nil
 }
 
 func (b *Broker) handleOffsetFetch(correlationID int32, data []byte) ([]byte, error) {
-	groupID, reqs, err := kafkaprotocol.ParseOffsetFetchRequest(data)
+	groupID, reqs, err := proto.ParseOffsetFetchRequest(data)
 	if err != nil {
 		slog.Error("parse offset fetch failed", "err", err)
 		return nil, fmt.Errorf("parse offset fetch: %w", err)
 	}
 
-	var entries []kafkaprotocol.OffsetFetchResponseEntry
+	var entries []proto.OffsetFetchResponseEntry
 	for _, req := range reqs {
-		var partEntries []kafkaprotocol.OffsetFetchPartitionEntry
+		var partEntries []proto.OffsetFetchPartitionEntry
 		for _, partition := range req.Partitions {
 			// Default: -1 = no committed offset (Kafka spec)
 			var offset int64 = -1
@@ -155,12 +155,12 @@ func (b *Broker) handleOffsetFetch(correlationID int32, data []byte) ([]byte, er
 			}
 
 			slog.Info("offset fetch", "group", groupID, "topic", req.Topic, "partition", partition, "offset", offset)
-			partEntries = append(partEntries, kafkaprotocol.OffsetFetchPartitionEntry{
+			partEntries = append(partEntries, proto.OffsetFetchPartitionEntry{
 				Partition: partition,
 				Offset:    offset,
 			})
 		}
-		entries = append(entries, kafkaprotocol.OffsetFetchResponseEntry{
+		entries = append(entries, proto.OffsetFetchResponseEntry{
 			Topic:      req.Topic,
 			Partitions: partEntries,
 		})
@@ -168,27 +168,27 @@ func (b *Broker) handleOffsetFetch(correlationID int32, data []byte) ([]byte, er
 
 	// If no topics were requested, return an empty response
 	if len(entries) == 0 {
-		entries = append(entries, kafkaprotocol.OffsetFetchResponseEntry{
+		entries = append(entries, proto.OffsetFetchResponseEntry{
 			Topic: "test-topic",
-			Partitions: []kafkaprotocol.OffsetFetchPartitionEntry{
+			Partitions: []proto.OffsetFetchPartitionEntry{
 				{Partition: 0, Offset: -1},
 			},
 		})
 	}
 
-	return kafkaprotocol.HandleOffsetFetchResponse(correlationID, entries), nil
+	return proto.HandleOffsetFetchResponse(correlationID, entries), nil
 }
 
 func (b *Broker) handleListOffsets(correlationID int32, data []byte) ([]byte, error) {
-	reqs, err := kafkaprotocol.ParseListOffsetsRequest(data)
+	reqs, err := proto.ParseListOffsetsRequest(data)
 	if err != nil {
 		slog.Error("parse list offsets failed", "err", err)
 		return nil, fmt.Errorf("parse list offsets: %w", err)
 	}
 
-	var entries []kafkaprotocol.ListOffsetsResponseEntry
+	var entries []proto.ListOffsetsResponseEntry
 	for _, req := range reqs {
-		entry := kafkaprotocol.ListOffsetsResponseEntry{
+		entry := proto.ListOffsetsResponseEntry{
 			Topic:     req.Topic,
 			Partition: req.Partition,
 		}
@@ -232,5 +232,5 @@ func (b *Broker) handleListOffsets(correlationID int32, data []byte) ([]byte, er
 		entries = append(entries, entry)
 	}
 
-	return kafkaprotocol.HandleListOffsetsResponse(correlationID, entries), nil
+	return proto.HandleListOffsetsResponse(correlationID, entries), nil
 }

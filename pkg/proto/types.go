@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 // Reference: https://kafka.apache.org/protocol.html#protocol_api_keys
 const (

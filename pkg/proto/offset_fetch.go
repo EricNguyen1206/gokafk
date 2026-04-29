@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 type OffsetFetchRequestInfo struct {
 	Topic      string
@@ -47,7 +47,7 @@ func ParseOffsetFetchRequest(reqData []byte) (string, []OffsetFetchRequestInfo, 
 // OffsetFetchPartitionEntry holds the response data for a single partition in an OffsetFetch response.
 type OffsetFetchPartitionEntry struct {
 	Partition int32
-	Offset    int64  // -1 = no committed offset
+	Offset    int64 // -1 = no committed offset
 	Metadata  string
 	ErrorCode int16
 }

@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 // HandleMetadata parses a minimal MetadataRequest and returns a single mocked partition pointing to localhost:10000.
 func HandleMetadata(correlationID int32, reqData []byte) []byte {

@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 import (
 	"bufio"

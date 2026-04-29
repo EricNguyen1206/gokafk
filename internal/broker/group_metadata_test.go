@@ -3,13 +3,13 @@ package broker
 import (
 	"testing"
 
-	"gokafk/pkg/kafkaprotocol"
+	"gokafk/pkg/proto"
 )
 
 func TestGroupMetadata_Join_SingleMember(t *testing.T) {
 	g := NewGroupMetadata("test-group")
 
-	protocols := []kafkaprotocol.JoinGroupProtocol{
+	protocols := []proto.JoinGroupProtocol{
 		{Name: "range", Metadata: []byte{0x01}},
 	}
 
@@ -36,7 +36,7 @@ func TestGroupMetadata_Join_SingleMember(t *testing.T) {
 func TestGroupMetadata_Join_MultipleMembersLeaderElection(t *testing.T) {
 	g := NewGroupMetadata("test-group")
 
-	protocols := []kafkaprotocol.JoinGroupProtocol{
+	protocols := []proto.JoinGroupProtocol{
 		{Name: "range", Metadata: nil},
 	}
 
@@ -63,14 +63,14 @@ func TestGroupMetadata_Join_MultipleMembersLeaderElection(t *testing.T) {
 func TestGroupMetadata_SyncLeader(t *testing.T) {
 	g := NewGroupMetadata("test-group")
 
-	protocols := []kafkaprotocol.JoinGroupProtocol{
+	protocols := []proto.JoinGroupProtocol{
 		{Name: "range", Metadata: nil},
 	}
 
 	_, _, _, memberID, _ := g.Join("", "client-1", protocols)
 
 	// Leader sends SyncGroup with its own assignment
-	assignments := []kafkaprotocol.SyncGroupAssignment{
+	assignments := []proto.SyncGroupAssignment{
 		{MemberID: memberID, Assignment: []byte{0xCA, 0xFE}},
 	}
 
@@ -86,7 +86,7 @@ func TestGroupMetadata_SyncLeader(t *testing.T) {
 func TestGroupMetadata_Leave(t *testing.T) {
 	g := NewGroupMetadata("test-group")
 
-	protocols := []kafkaprotocol.JoinGroupProtocol{
+	protocols := []proto.JoinGroupProtocol{
 		{Name: "range", Metadata: nil},
 	}
 
@@ -106,7 +106,7 @@ func TestGroupMetadata_Leave(t *testing.T) {
 func TestGroupMetadata_Leave_LeaderReelection(t *testing.T) {
 	g := NewGroupMetadata("test-group")
 
-	protocols := []kafkaprotocol.JoinGroupProtocol{
+	protocols := []proto.JoinGroupProtocol{
 		{Name: "range", Metadata: nil},
 	}
 

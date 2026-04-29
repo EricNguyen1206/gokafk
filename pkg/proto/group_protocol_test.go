@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 import (
 	"testing"
@@ -7,17 +7,17 @@ import (
 func TestParseJoinGroupRequest(t *testing.T) {
 	// Build a JoinGroup request
 	enc := NewEncoder()
-	enc.WriteString("test-group")    // GroupId
-	enc.WriteInt32(30000)            // SessionTimeoutMs
-	enc.WriteInt32(60000)            // RebalanceTimeoutMs
-	enc.WriteString("")              // MemberId (empty = new member)
-	enc.WriteString("")              // GroupInstanceId (null)
-	enc.WriteString("consumer")      // ProtocolType
+	enc.WriteString("test-group") // GroupId
+	enc.WriteInt32(30000)         // SessionTimeoutMs
+	enc.WriteInt32(60000)         // RebalanceTimeoutMs
+	enc.WriteString("")           // MemberId (empty = new member)
+	enc.WriteString("")           // GroupInstanceId (null)
+	enc.WriteString("consumer")   // ProtocolType
 
 	// Protocols array (1 protocol)
 	enc.WriteInt32(1)
-	enc.WriteString("range")                   // Protocol Name
-	enc.WriteBytes([]byte{0x00, 0x01, 0x02})   // Protocol Metadata
+	enc.WriteString("range")                 // Protocol Name
+	enc.WriteBytes([]byte{0x00, 0x01, 0x02}) // Protocol Metadata
 
 	req, err := ParseJoinGroupRequest(enc.Bytes())
 	if err != nil {
@@ -111,12 +111,12 @@ func TestParseSyncGroupRequest(t *testing.T) {
 	enc.WriteString("test-group") // GroupId
 	enc.WriteInt32(1)             // GenerationId
 	enc.WriteString("member-1")   // MemberId
-	enc.WriteString("")            // GroupInstanceId
+	enc.WriteString("")           // GroupInstanceId
 
 	// Assignments array (1 assignment)
 	enc.WriteInt32(1)
-	enc.WriteString("member-1")                      // MemberId
-	enc.WriteBytes([]byte{0x00, 0x00, 0x01, 0x02})   // Assignment bytes
+	enc.WriteString("member-1")                    // MemberId
+	enc.WriteBytes([]byte{0x00, 0x00, 0x01, 0x02}) // Assignment bytes
 
 	req, err := ParseSyncGroupRequest(enc.Bytes())
 	if err != nil {

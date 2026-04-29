@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 // HandleHeartbeat builds a HeartbeatResponse (v0+).
 // Stateless — just echoes correlationID with no error.

@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 // LeaveGroupRequest represents a parsed LeaveGroup request (v0-v2, non-flexible).
 type LeaveGroupRequest struct {
