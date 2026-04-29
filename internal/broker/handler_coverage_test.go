@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	"gokafk/pkg/kafkaprotocol"
+	"gokafk/pkg/proto"
 )
 
 func TestRouteMessage_UnsupportedKey(t *testing.T) {
 	b := newTestBroker(t)
 
-	header := &kafkaprotocol.RequestHeader{APIKey: 99, CorrelationID: 1}
+	header := &proto.RequestHeader{APIKey: 99, CorrelationID: 1}
 	resp, err := b.routeMessage(context.Background(), header, nil, nil)
 	if err != nil {
 		t.Fatalf("routeMessage unsupported key: %v", err)
@@ -23,7 +23,7 @@ func TestRouteMessage_UnsupportedKey(t *testing.T) {
 func TestRouteMessage_Metadata(t *testing.T) {
 	b := newTestBroker(t)
 
-	header := &kafkaprotocol.RequestHeader{APIKey: kafkaprotocol.ApiKeyMetadata, CorrelationID: 1}
+	header := &proto.RequestHeader{APIKey: proto.ApiKeyMetadata, CorrelationID: 1}
 	resp, err := b.routeMessage(context.Background(), header, nil, nil)
 	if err != nil {
 		t.Fatalf("routeMessage metadata: %v", err)
@@ -36,7 +36,7 @@ func TestRouteMessage_Metadata(t *testing.T) {
 func TestRouteMessage_ApiVersions(t *testing.T) {
 	b := newTestBroker(t)
 
-	header := &kafkaprotocol.RequestHeader{APIKey: kafkaprotocol.ApiKeyApiVersions, CorrelationID: 1}
+	header := &proto.RequestHeader{APIKey: proto.ApiKeyApiVersions, CorrelationID: 1}
 	resp, err := b.routeMessage(context.Background(), header, nil, nil)
 	if err != nil {
 		t.Fatalf("routeMessage apiversions: %v", err)
@@ -49,7 +49,7 @@ func TestRouteMessage_ApiVersions(t *testing.T) {
 func TestRouteMessage_FindCoordinator(t *testing.T) {
 	b := newTestBroker(t)
 
-	header := &kafkaprotocol.RequestHeader{APIKey: kafkaprotocol.ApiKeyFindCoordinator, CorrelationID: 1}
+	header := &proto.RequestHeader{APIKey: proto.ApiKeyFindCoordinator, CorrelationID: 1}
 	resp, err := b.routeMessage(context.Background(), header, nil, nil)
 	if err != nil {
 		t.Fatalf("routeMessage findcoordinator: %v", err)
@@ -62,7 +62,7 @@ func TestRouteMessage_FindCoordinator(t *testing.T) {
 func TestRouteMessage_Heartbeat(t *testing.T) {
 	b := newTestBroker(t)
 
-	header := &kafkaprotocol.RequestHeader{APIKey: kafkaprotocol.ApiKeyHeartbeat, CorrelationID: 1}
+	header := &proto.RequestHeader{APIKey: proto.ApiKeyHeartbeat, CorrelationID: 1}
 	resp, err := b.routeMessage(context.Background(), header, nil, nil)
 	if err != nil {
 		t.Fatalf("routeMessage heartbeat: %v", err)
@@ -76,34 +76,34 @@ func TestHandleProduce(t *testing.T) {
 	b := newTestBroker(t)
 
 	// Build a minimal ProduceRequest using the encoder
-	enc := kafkaprotocol.NewEncoder()
-	enc.WriteString("")      // TransactionalId
-	enc.WriteInt16(1)        // Acks
-	enc.WriteInt32(5000)     // Timeout
-	enc.WriteInt32(1)        // NumTopics
-	enc.WriteString("test")  // Topic
-	enc.WriteInt32(1)        // NumPartitions
-	enc.WriteInt32(0)        // Partition
+	enc := proto.NewEncoder()
+	enc.WriteString("")     // TransactionalId
+	enc.WriteInt16(1)       // Acks
+	enc.WriteInt32(5000)    // Timeout
+	enc.WriteInt32(1)       // NumTopics
+	enc.WriteString("test") // Topic
+	enc.WriteInt32(1)       // NumPartitions
+	enc.WriteInt32(0)       // Partition
 
 	// Build a minimal RecordBatch
-	batchEnc := kafkaprotocol.NewEncoder()
+	batchEnc := proto.NewEncoder()
 	// RecordBatch header (61 bytes total after the batch size field)
-	batchEnc.WriteInt64(0)   // BaseOffset
-	batchEnc.WriteInt32(0)   // Length (placeholder)
-	batchEnc.WriteInt32(0)   // PartitionLeaderEpoch
-	batchEnc.WriteInt8(2)    // Magic
-	batchEnc.WriteInt32(0)   // CRC
-	batchEnc.WriteInt16(0)   // Attributes
-	batchEnc.WriteInt32(0)   // LastOffsetDelta
-	batchEnc.WriteInt64(0)   // FirstTimestamp
-	batchEnc.WriteInt64(0)   // MaxTimestamp
-	batchEnc.WriteInt64(-1)  // ProducerID
-	batchEnc.WriteInt16(-1)  // ProducerEpoch
-	batchEnc.WriteInt32(-1)  // BaseSequence
-	batchEnc.WriteInt32(1)   // Records count
+	batchEnc.WriteInt64(0)  // BaseOffset
+	batchEnc.WriteInt32(0)  // Length (placeholder)
+	batchEnc.WriteInt32(0)  // PartitionLeaderEpoch
+	batchEnc.WriteInt8(2)   // Magic
+	batchEnc.WriteInt32(0)  // CRC
+	batchEnc.WriteInt16(0)  // Attributes
+	batchEnc.WriteInt32(0)  // LastOffsetDelta
+	batchEnc.WriteInt64(0)  // FirstTimestamp
+	batchEnc.WriteInt64(0)  // MaxTimestamp
+	batchEnc.WriteInt64(-1) // ProducerID
+	batchEnc.WriteInt16(-1) // ProducerEpoch
+	batchEnc.WriteInt32(-1) // BaseSequence
+	batchEnc.WriteInt32(1)  // Records count
 
 	// Single record with value "hello"
-	recEnc := kafkaprotocol.NewEncoder()
+	recEnc := proto.NewEncoder()
 	recEnc.WriteInt8(0) // length placeholder (varint, 1 byte)
 	recEnc.WriteInt8(0) // Attr
 	recEnc.WriteInt8(0) // TS delta
@@ -136,22 +136,22 @@ func TestHandleFetch(t *testing.T) {
 	tp.Append([]byte("key"), []byte("hello"))
 
 	// Build a minimal FetchRequest
-	enc := kafkaprotocol.NewEncoder()
-	enc.WriteInt32(-1)       // ReplicaID
-	enc.WriteInt32(100)      // MaxWait
-	enc.WriteInt32(1)        // MinBytes
-	enc.WriteInt32(1048576)  // MaxBytes
-	enc.WriteInt8(0)         // IsolationLevel
-	enc.WriteInt32(0)        // SessionID
-	enc.WriteInt32(0)        // SessionEpoch
-	enc.WriteInt32(1)        // NumTopics
+	enc := proto.NewEncoder()
+	enc.WriteInt32(-1)      // ReplicaID
+	enc.WriteInt32(100)     // MaxWait
+	enc.WriteInt32(1)       // MinBytes
+	enc.WriteInt32(1048576) // MaxBytes
+	enc.WriteInt8(0)        // IsolationLevel
+	enc.WriteInt32(0)       // SessionID
+	enc.WriteInt32(0)       // SessionEpoch
+	enc.WriteInt32(1)       // NumTopics
 	enc.WriteString("test-topic")
-	enc.WriteInt32(1)        // NumPartitions
-	enc.WriteInt32(0)        // Partition
-	enc.WriteInt32(0)        // CurrentLeaderEpoch
-	enc.WriteInt64(0)        // FetchOffset
-	enc.WriteInt64(0)        // LogStartOffset
-	enc.WriteInt32(1048576)  // PartitionMaxBytes
+	enc.WriteInt32(1)       // NumPartitions
+	enc.WriteInt32(0)       // Partition
+	enc.WriteInt32(0)       // CurrentLeaderEpoch
+	enc.WriteInt64(0)       // FetchOffset
+	enc.WriteInt64(0)       // LogStartOffset
+	enc.WriteInt32(1048576) // PartitionMaxBytes
 
 	resp, err := b.handleFetch(1, enc.Bytes())
 	if err != nil {
@@ -165,7 +165,7 @@ func TestHandleFetch(t *testing.T) {
 func TestHandleFetch_Empty(t *testing.T) {
 	b := newTestBroker(t)
 
-	enc := kafkaprotocol.NewEncoder()
+	enc := proto.NewEncoder()
 	enc.WriteInt32(-1)
 	enc.WriteInt32(100)
 	enc.WriteInt32(1)
@@ -197,15 +197,15 @@ func TestHandleListOffsets(t *testing.T) {
 	tp, _ := b.getOrCreateTopic("test-topic")
 	tp.Append(nil, []byte("msg"))
 
-	enc := kafkaprotocol.NewEncoder()
-	enc.WriteInt32(-1)       // ReplicaID
-	enc.WriteInt8(0)         // IsolationLevel
-	enc.WriteInt32(1)        // NumTopics
+	enc := proto.NewEncoder()
+	enc.WriteInt32(-1) // ReplicaID
+	enc.WriteInt8(0)   // IsolationLevel
+	enc.WriteInt32(1)  // NumTopics
 	enc.WriteString("test-topic")
-	enc.WriteInt32(1)        // NumPartitions
-	enc.WriteInt32(0)        // Partition
-	enc.WriteInt32(-1)       // CurrentLeaderEpoch
-	enc.WriteInt64(-1)       // Timestamp = Latest
+	enc.WriteInt32(1)  // NumPartitions
+	enc.WriteInt32(0)  // Partition
+	enc.WriteInt32(-1) // CurrentLeaderEpoch
+	enc.WriteInt64(-1) // Timestamp = Latest
 
 	resp, err := b.handleListOffsets(1, enc.Bytes())
 	if err != nil {
@@ -219,18 +219,18 @@ func TestHandleListOffsets(t *testing.T) {
 func TestHandleOffsetCommit(t *testing.T) {
 	b := newTestBroker(t)
 
-	enc := kafkaprotocol.NewEncoder()
-	enc.WriteString("my-group")  // GroupID
-	enc.WriteInt32(1)            // GenerationID
-	enc.WriteString("member-1")  // MemberID
-	enc.WriteString("")          // GroupInstanceID
-	enc.WriteInt32(1)            // NumTopics
-	enc.WriteString("orders")    // Topic
-	enc.WriteInt32(1)            // NumPartitions
-	enc.WriteInt32(0)            // Partition
-	enc.WriteInt64(42)           // Offset
-	enc.WriteString("")          // Metadata
-	enc.WriteInt32(-1)           // PartitionLeaderEpoch
+	enc := proto.NewEncoder()
+	enc.WriteString("my-group") // GroupID
+	enc.WriteInt32(1)           // GenerationID
+	enc.WriteString("member-1") // MemberID
+	enc.WriteString("")         // GroupInstanceID
+	enc.WriteInt32(1)           // NumTopics
+	enc.WriteString("orders")   // Topic
+	enc.WriteInt32(1)           // NumPartitions
+	enc.WriteInt32(0)           // Partition
+	enc.WriteInt64(42)          // Offset
+	enc.WriteString("")         // Metadata
+	enc.WriteInt32(-1)          // PartitionLeaderEpoch
 
 	resp, err := b.handleOffsetCommit(1, enc.Bytes())
 	if err != nil {
@@ -247,7 +247,7 @@ func TestHandleOffsetFetch(t *testing.T) {
 	// Commit an offset first
 	b.commitConsumerOffset("my-group", "orders", 0, 100)
 
-	enc := kafkaprotocol.NewEncoder()
+	enc := proto.NewEncoder()
 	enc.WriteString("my-group")
 	enc.WriteInt32(1)
 	enc.WriteString("orders")
@@ -266,7 +266,7 @@ func TestHandleOffsetFetch(t *testing.T) {
 func TestHandleJoinGroup(t *testing.T) {
 	b := newTestBroker(t)
 
-	enc := kafkaprotocol.NewEncoder()
+	enc := proto.NewEncoder()
 	enc.WriteString("test-group")
 	enc.WriteInt32(10000)
 	enc.WriteInt32(10000)
@@ -290,7 +290,7 @@ func TestHandleSyncGroup(t *testing.T) {
 	b := newTestBroker(t)
 
 	// Join first to register member
-	joinEnc := kafkaprotocol.NewEncoder()
+	joinEnc := proto.NewEncoder()
 	joinEnc.WriteString("test-group")
 	joinEnc.WriteInt32(10000)
 	joinEnc.WriteInt32(10000)
@@ -307,21 +307,21 @@ func TestHandleSyncGroup(t *testing.T) {
 	}
 
 	// Parse memberID from join response (skip correlationID + throttle + errorCode + generation + protocol + leaderID)
-	dec := kafkaprotocol.NewDecoder(joinResp[4:]) // skip correlationID
-	dec.ReadInt32()                               // throttle
-	dec.ReadInt16()                               // errorCode
-	dec.ReadInt32()                               // generation
-	dec.ReadString()                              // protocol
-	dec.ReadString()                              // leaderID
+	dec := proto.NewDecoder(joinResp[4:]) // skip correlationID
+	dec.ReadInt32()                       // throttle
+	dec.ReadInt16()                       // errorCode
+	dec.ReadInt32()                       // generation
+	dec.ReadString()                      // protocol
+	dec.ReadString()                      // leaderID
 	memberID, _ := dec.ReadString()
 
 	// SyncGroup
-	syncEnc := kafkaprotocol.NewEncoder()
+	syncEnc := proto.NewEncoder()
 	syncEnc.WriteString("test-group")
-	syncEnc.WriteInt32(1)          // generation
+	syncEnc.WriteInt32(1) // generation
 	syncEnc.WriteString(memberID)
-	syncEnc.WriteString("")        // groupInstanceID
-	syncEnc.WriteInt32(1)          // numAssignments
+	syncEnc.WriteString("") // groupInstanceID
+	syncEnc.WriteInt32(1)   // numAssignments
 	syncEnc.WriteString(memberID)
 	syncEnc.WriteBytes([]byte{0x01}) // assignment
 
@@ -337,7 +337,7 @@ func TestHandleSyncGroup(t *testing.T) {
 func TestHandleLeaveGroup(t *testing.T) {
 	b := newTestBroker(t)
 
-	enc := kafkaprotocol.NewEncoder()
+	enc := proto.NewEncoder()
 	enc.WriteString("test-group")
 	enc.WriteString("member-1")
 

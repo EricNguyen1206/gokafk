@@ -1,14 +1,14 @@
-package kafkaprotocol
+package proto
 
 // JoinGroupRequest represents a parsed JoinGroup request (v0-v5, non-flexible).
 type JoinGroupRequest struct {
-	GroupID          string
-	SessionTimeoutMs int32
+	GroupID            string
+	SessionTimeoutMs   int32
 	RebalanceTimeoutMs int32
-	MemberID         string
-	GroupInstanceID  string // nullable
-	ProtocolType     string
-	Protocols        []JoinGroupProtocol
+	MemberID           string
+	GroupInstanceID    string // nullable
+	ProtocolType       string
+	Protocols          []JoinGroupProtocol
 }
 
 // JoinGroupProtocol represents a single protocol entry in JoinGroup request.

@@ -1,9 +1,9 @@
-package kafkaprotocol
+package proto
 
 // SyncGroupRequest represents a parsed SyncGroup request (v0-v3, non-flexible).
 type SyncGroupRequest struct {
 	GroupID         string
-	GenerationID   int32
+	GenerationID    int32
 	MemberID        string
 	GroupInstanceID string // nullable, v3+
 	Assignments     []SyncGroupAssignment
@@ -65,7 +65,7 @@ func ParseSyncGroupRequest(data []byte) (*SyncGroupRequest, error) {
 
 	return &SyncGroupRequest{
 		GroupID:         groupID,
-		GenerationID:   generationID,
+		GenerationID:    generationID,
 		MemberID:        memberID,
 		GroupInstanceID: groupInstanceID,
 		Assignments:     assignments,

@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 type OffsetCommitRequestInfo struct {
 	Topic                string

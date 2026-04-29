@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 // HandleFindCoordinator mocks the FindCoordinatorResponse directing the client to Node 0.
 func HandleFindCoordinator(correlationID int32) []byte {

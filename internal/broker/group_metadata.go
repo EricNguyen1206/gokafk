@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"gokafk/pkg/kafkaprotocol"
+	"gokafk/pkg/proto"
 )
 
 // GroupMetadata manages the group coordination protocol (JoinGroup/SyncGroup/LeaveGroup).
@@ -26,7 +26,7 @@ type GroupMetadata struct {
 type MemberMetadata struct {
 	memberID  string
 	clientID  string
-	protocols []kafkaprotocol.JoinGroupProtocol
+	protocols []proto.JoinGroupProtocol
 }
 
 // NewGroupMetadata creates a new coordinated group.
@@ -41,7 +41,7 @@ func NewGroupMetadata(groupID string) *GroupMetadata {
 
 // Join handles a JoinGroup request. Registers the member, elects leader, increments generation.
 // Returns: generationID, protocolName, leaderID, memberID, members list
-func (g *GroupMetadata) Join(memberID, clientID string, protocols []kafkaprotocol.JoinGroupProtocol) (int32, string, string, string, []kafkaprotocol.JoinGroupMember) {
+func (g *GroupMetadata) Join(memberID, clientID string, protocols []proto.JoinGroupProtocol) (int32, string, string, string, []proto.JoinGroupMember) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -84,13 +84,13 @@ func (g *GroupMetadata) Join(memberID, clientID string, protocols []kafkaprotoco
 
 	// Build member list (only leader gets full list with metadata in real Kafka,
 	// but for simplicity we send it to all — KafkaJS handles both cases)
-	members := make([]kafkaprotocol.JoinGroupMember, 0, len(g.members))
+	members := make([]proto.JoinGroupMember, 0, len(g.members))
 	for _, m := range g.members {
 		var metadata []byte
 		if len(m.protocols) > 0 {
 			metadata = m.protocols[0].Metadata
 		}
-		members = append(members, kafkaprotocol.JoinGroupMember{
+		members = append(members, proto.JoinGroupMember{
 			MemberID:        m.memberID,
 			GroupInstanceID: "",
 			Metadata:        metadata,
@@ -103,7 +103,7 @@ func (g *GroupMetadata) Join(memberID, clientID string, protocols []kafkaprotoco
 // Sync handles a SyncGroup request.
 // Leader provides assignments for all members; followers wait for assignments.
 // Returns: assignment bytes for the requesting member.
-func (g *GroupMetadata) Sync(memberID string, assignments []kafkaprotocol.SyncGroupAssignment) ([]byte, error) {
+func (g *GroupMetadata) Sync(memberID string, assignments []proto.SyncGroupAssignment) ([]byte, error) {
 	g.mu.Lock()
 
 	isLeader := memberID == g.leaderID
@@ -195,16 +195,16 @@ func (b *Broker) getOrCreateGroupMetadata(groupID string) *GroupMetadata {
 }
 
 func (b *Broker) handleJoinGroup(correlationID int32, data []byte) ([]byte, error) {
-	req, err := kafkaprotocol.ParseJoinGroupRequest(data)
+	req, err := proto.ParseJoinGroupRequest(data)
 	if err != nil {
 		slog.Error("parse join group failed", "err", err)
-		return kafkaprotocol.HandleJoinGroupResponse(correlationID, 76, 0, "", "", "", nil), nil // 76 = GROUP_AUTHORIZATION_FAILED
+		return proto.HandleJoinGroupResponse(correlationID, 76, 0, "", "", "", nil), nil // 76 = GROUP_AUTHORIZATION_FAILED
 	}
 
 	g := b.getOrCreateGroupMetadata(req.GroupID)
 	generationID, protocolName, leaderID, memberID, members := g.Join(req.MemberID, "", req.Protocols)
 
-	return kafkaprotocol.HandleJoinGroupResponse(
+	return proto.HandleJoinGroupResponse(
 		correlationID,
 		0, // no error
 		generationID,
@@ -216,31 +216,31 @@ func (b *Broker) handleJoinGroup(correlationID int32, data []byte) ([]byte, erro
 }
 
 func (b *Broker) handleSyncGroup(correlationID int32, data []byte) ([]byte, error) {
-	req, err := kafkaprotocol.ParseSyncGroupRequest(data)
+	req, err := proto.ParseSyncGroupRequest(data)
 	if err != nil {
 		slog.Error("parse sync group failed", "err", err)
-		return kafkaprotocol.HandleSyncGroupResponse(correlationID, 76, nil), nil
+		return proto.HandleSyncGroupResponse(correlationID, 76, nil), nil
 	}
 
 	g := b.getOrCreateGroupMetadata(req.GroupID)
 	assignment, err := g.Sync(req.MemberID, req.Assignments)
 	if err != nil {
 		slog.Error("sync group failed", "err", err)
-		return kafkaprotocol.HandleSyncGroupResponse(correlationID, 25, nil), nil // 25 = REBALANCE_IN_PROGRESS
+		return proto.HandleSyncGroupResponse(correlationID, 25, nil), nil // 25 = REBALANCE_IN_PROGRESS
 	}
 
-	return kafkaprotocol.HandleSyncGroupResponse(correlationID, 0, assignment), nil
+	return proto.HandleSyncGroupResponse(correlationID, 0, assignment), nil
 }
 
 func (b *Broker) handleLeaveGroup(correlationID int32, data []byte) ([]byte, error) {
-	req, err := kafkaprotocol.ParseLeaveGroupRequest(data)
+	req, err := proto.ParseLeaveGroupRequest(data)
 	if err != nil {
 		slog.Error("parse leave group failed", "err", err)
-		return kafkaprotocol.HandleLeaveGroupResponse(correlationID, 76), nil
+		return proto.HandleLeaveGroupResponse(correlationID, 76), nil
 	}
 
 	g := b.getOrCreateGroupMetadata(req.GroupID)
 	g.Leave(req.MemberID)
 
-	return kafkaprotocol.HandleLeaveGroupResponse(correlationID, 0), nil
+	return proto.HandleLeaveGroupResponse(correlationID, 0), nil
 }

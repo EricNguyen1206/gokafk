@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 import "testing"
 
@@ -22,21 +22,21 @@ func TestHandleFetchResponse_WithData(t *testing.T) {
 
 func TestParseFetchRequest(t *testing.T) {
 	enc := NewEncoder()
-	enc.WriteInt32(-1)       // ReplicaID
-	enc.WriteInt32(100)      // MaxWait
-	enc.WriteInt32(1)        // MinBytes
-	enc.WriteInt32(1048576)  // MaxBytes
-	enc.WriteInt8(0)         // IsolationLevel
-	enc.WriteInt32(0)        // SessionID
-	enc.WriteInt32(0)        // SessionEpoch
-	enc.WriteInt32(1)        // NumTopics
+	enc.WriteInt32(-1)      // ReplicaID
+	enc.WriteInt32(100)     // MaxWait
+	enc.WriteInt32(1)       // MinBytes
+	enc.WriteInt32(1048576) // MaxBytes
+	enc.WriteInt8(0)        // IsolationLevel
+	enc.WriteInt32(0)       // SessionID
+	enc.WriteInt32(0)       // SessionEpoch
+	enc.WriteInt32(1)       // NumTopics
 	enc.WriteString("test")
-	enc.WriteInt32(1)        // NumPartitions
-	enc.WriteInt32(0)        // Partition
-	enc.WriteInt32(0)        // CurrentLeaderEpoch
-	enc.WriteInt64(0)        // FetchOffset
-	enc.WriteInt64(0)        // LogStartOffset
-	enc.WriteInt32(1048576)  // PartitionMaxBytes
+	enc.WriteInt32(1)       // NumPartitions
+	enc.WriteInt32(0)       // Partition
+	enc.WriteInt32(0)       // CurrentLeaderEpoch
+	enc.WriteInt64(0)       // FetchOffset
+	enc.WriteInt64(0)       // LogStartOffset
+	enc.WriteInt32(1048576) // PartitionMaxBytes
 
 	reqs, err := ParseFetchRequest(enc.Bytes())
 	if err != nil {

@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 // FetchRequestInfo holds parsed information about a fetch request length
 type FetchRequestInfo struct {

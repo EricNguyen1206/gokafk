@@ -9,26 +9,26 @@ import (
 	"sync"
 
 	"gokafk/internal/config"
-	"gokafk/pkg/kafkaprotocol"
+	"gokafk/pkg/proto"
 )
 
 // Broker is the central TCP server that routes messages between producers and consumers.
 // if broker is leader in cluster, it will handle the consumer group protocol
 type Broker struct {
-	cfg       *config.Config
-	mu        sync.RWMutex
-	topics    map[string]*Topic         // topicID → Topic
-	groups    map[string]*GroupMetadata // groupID → group coordinator
-	listener  net.Listener
-	wg        sync.WaitGroup
+	cfg      *config.Config
+	mu       sync.RWMutex
+	topics   map[string]*Topic         // topicID → Topic
+	groups   map[string]*GroupMetadata // groupID → group coordinator
+	listener net.Listener
+	wg       sync.WaitGroup
 }
 
 // NewBroker creates a new broker with the given configuration.
 func NewBroker(cfg *config.Config) *Broker {
 	return &Broker{
-		cfg:       cfg,
-		topics:    make(map[string]*Topic),
-		groups:    make(map[string]*GroupMetadata),
+		cfg:    cfg,
+		topics: make(map[string]*Topic),
+		groups: make(map[string]*GroupMetadata),
 	}
 }
 
@@ -90,7 +90,7 @@ func (b *Broker) handleConnection(ctx context.Context, conn net.Conn) {
 	defer b.cleanupConnection(conn)
 
 	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	codec := kafkaprotocol.NewCodec(rw, conn)
+	codec := proto.NewCodec(rw, conn)
 
 	slog.Info("new connection", "remote", conn.RemoteAddr())
 

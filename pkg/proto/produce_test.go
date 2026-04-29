@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 import "testing"
 
@@ -13,29 +13,29 @@ func TestHandleProduceResponse_CorrelationID(t *testing.T) {
 
 func TestParseProduceRequest(t *testing.T) {
 	enc := NewEncoder()
-	enc.WriteString("")      // TransactionalId
-	enc.WriteInt16(1)        // Acks
-	enc.WriteInt32(5000)     // Timeout
-	enc.WriteInt32(1)        // NumTopics
-	enc.WriteString("test")  // Topic
-	enc.WriteInt32(1)        // NumPartitions
-	enc.WriteInt32(0)        // Partition
+	enc.WriteString("")     // TransactionalId
+	enc.WriteInt16(1)       // Acks
+	enc.WriteInt32(5000)    // Timeout
+	enc.WriteInt32(1)       // NumTopics
+	enc.WriteString("test") // Topic
+	enc.WriteInt32(1)       // NumPartitions
+	enc.WriteInt32(0)       // Partition
 
 	// Build a minimal RecordBatch (61-byte header + records)
 	batchEnc := NewEncoder()
-	batchEnc.WriteInt64(0)   // BaseOffset
-	batchEnc.WriteInt32(0)   // Length (placeholder)
-	batchEnc.WriteInt32(0)   // PartitionLeaderEpoch
-	batchEnc.WriteInt8(2)    // Magic
-	batchEnc.WriteInt32(0)   // CRC
-	batchEnc.WriteInt16(0)   // Attributes
-	batchEnc.WriteInt32(0)   // LastOffsetDelta
-	batchEnc.WriteInt64(0)   // FirstTimestamp
-	batchEnc.WriteInt64(0)   // MaxTimestamp
-	batchEnc.WriteInt64(-1)  // ProducerID
-	batchEnc.WriteInt16(-1)  // ProducerEpoch
-	batchEnc.WriteInt32(-1)  // BaseSequence
-	batchEnc.WriteInt32(1)   // Records count
+	batchEnc.WriteInt64(0)  // BaseOffset
+	batchEnc.WriteInt32(0)  // Length (placeholder)
+	batchEnc.WriteInt32(0)  // PartitionLeaderEpoch
+	batchEnc.WriteInt8(2)   // Magic
+	batchEnc.WriteInt32(0)  // CRC
+	batchEnc.WriteInt16(0)  // Attributes
+	batchEnc.WriteInt32(0)  // LastOffsetDelta
+	batchEnc.WriteInt64(0)  // FirstTimestamp
+	batchEnc.WriteInt64(0)  // MaxTimestamp
+	batchEnc.WriteInt64(-1) // ProducerID
+	batchEnc.WriteInt16(-1) // ProducerEpoch
+	batchEnc.WriteInt32(-1) // BaseSequence
+	batchEnc.WriteInt32(1)  // Records count
 
 	encVarInt := func(n int64) []byte {
 		zz := uint64((n << 1) ^ (n >> 63))
@@ -54,14 +54,14 @@ func TestParseProduceRequest(t *testing.T) {
 	}
 
 	recData := make([]byte, 0)
-	recData = append(recData, encVarInt(0)...)   // length
-	recData = append(recData, encVarInt(0)...)   // Attr
-	recData = append(recData, encVarInt(0)...)   // TS delta
-	recData = append(recData, encVarInt(0)...)   // Offset delta
-	recData = append(recData, encVarInt(0)...)   // Key len = 0
-	recData = append(recData, encVarInt(2)...)   // Value len zigzag: 2→4
+	recData = append(recData, encVarInt(0)...) // length
+	recData = append(recData, encVarInt(0)...) // Attr
+	recData = append(recData, encVarInt(0)...) // TS delta
+	recData = append(recData, encVarInt(0)...) // Offset delta
+	recData = append(recData, encVarInt(0)...) // Key len = 0
+	recData = append(recData, encVarInt(2)...) // Value len zigzag: 2→4
 	recData = append(recData, []byte("hi")...)
-	recData = append(recData, encVarInt(0)...)   // Headers = 0
+	recData = append(recData, encVarInt(0)...) // Headers = 0
 
 	batchEnc.data = append(batchEnc.data, recData...)
 
@@ -144,34 +144,34 @@ func TestParseProduceRequest_WithKeyAndHeaders(t *testing.T) {
 	enc.WriteInt32(0)       // Partition
 
 	batchEnc := NewEncoder()
-	batchEnc.WriteInt64(0)   // BaseOffset
-	batchEnc.WriteInt32(0)   // Length
-	batchEnc.WriteInt32(0)   // PartitionLeaderEpoch
-	batchEnc.WriteInt8(2)    // Magic
-	batchEnc.WriteInt32(0)   // CRC
-	batchEnc.WriteInt16(0)   // Attributes
-	batchEnc.WriteInt32(0)   // LastOffsetDelta
-	batchEnc.WriteInt64(0)   // FirstTimestamp
-	batchEnc.WriteInt64(0)   // MaxTimestamp
-	batchEnc.WriteInt64(-1)  // ProducerID
-	batchEnc.WriteInt16(-1)  // ProducerEpoch
-	batchEnc.WriteInt32(-1)  // BaseSequence
-	batchEnc.WriteInt32(1)   // Records count
+	batchEnc.WriteInt64(0)  // BaseOffset
+	batchEnc.WriteInt32(0)  // Length
+	batchEnc.WriteInt32(0)  // PartitionLeaderEpoch
+	batchEnc.WriteInt8(2)   // Magic
+	batchEnc.WriteInt32(0)  // CRC
+	batchEnc.WriteInt16(0)  // Attributes
+	batchEnc.WriteInt32(0)  // LastOffsetDelta
+	batchEnc.WriteInt64(0)  // FirstTimestamp
+	batchEnc.WriteInt64(0)  // MaxTimestamp
+	batchEnc.WriteInt64(-1) // ProducerID
+	batchEnc.WriteInt16(-1) // ProducerEpoch
+	batchEnc.WriteInt32(-1) // BaseSequence
+	batchEnc.WriteInt32(1)  // Records count
 
 	recData := make([]byte, 0)
-	recData = append(recData, encVarInt(0)...)   // length
-	recData = append(recData, encVarInt(0)...)   // Attr
-	recData = append(recData, encVarInt(0)...)   // TS delta
-	recData = append(recData, encVarInt(0)...)   // Offset delta
-	recData = append(recData, encVarInt(2)...)   // Key len = 2 (zigzag encoded)
-	recData = append(recData, []byte("ke")...)   // Key data
-	recData = append(recData, encVarInt(2)...)   // Value len = 2 (zigzag encoded)
-	recData = append(recData, []byte("ab")...)   // Value data
-	recData = append(recData, encVarInt(1)...)   // 1 header
-	recData = append(recData, encVarInt(3)...)   // header key len = 3
-	recData = append(recData, []byte("foo")...)  // header key
-	recData = append(recData, encVarInt(3)...)   // header value len = 3
-	recData = append(recData, []byte("bar")...)  // header value
+	recData = append(recData, encVarInt(0)...)  // length
+	recData = append(recData, encVarInt(0)...)  // Attr
+	recData = append(recData, encVarInt(0)...)  // TS delta
+	recData = append(recData, encVarInt(0)...)  // Offset delta
+	recData = append(recData, encVarInt(2)...)  // Key len = 2 (zigzag encoded)
+	recData = append(recData, []byte("ke")...)  // Key data
+	recData = append(recData, encVarInt(2)...)  // Value len = 2 (zigzag encoded)
+	recData = append(recData, []byte("ab")...)  // Value data
+	recData = append(recData, encVarInt(1)...)  // 1 header
+	recData = append(recData, encVarInt(3)...)  // header key len = 3
+	recData = append(recData, []byte("foo")...) // header key
+	recData = append(recData, encVarInt(3)...)  // header value len = 3
+	recData = append(recData, []byte("bar")...) // header value
 
 	batchEnc.data = append(batchEnc.data, recData...)
 	enc.WriteBytes(batchEnc.Bytes())

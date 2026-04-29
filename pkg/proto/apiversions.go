@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 // HandleApiVersions returns a static/mocked ApiVersion response stating we support basic APIs
 func HandleApiVersions(correlationID int32) []byte {

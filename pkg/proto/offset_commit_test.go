@@ -1,4 +1,4 @@
-package kafkaprotocol
+package proto
 
 import "testing"
 
@@ -14,16 +14,16 @@ func TestHandleOffsetCommitResponse_CorrelationID(t *testing.T) {
 func TestParseOffsetCommitRequest(t *testing.T) {
 	enc := NewEncoder()
 	enc.WriteString("my-group")
-	enc.WriteInt32(1)            // GenerationID
+	enc.WriteInt32(1)           // GenerationID
 	enc.WriteString("member-1") // MemberID
-	enc.WriteString("")          // GroupInstanceID
-	enc.WriteInt32(1)            // NumTopics
-	enc.WriteString("orders")    // Topic
-	enc.WriteInt32(1)            // NumPartitions
-	enc.WriteInt32(0)            // Partition
-	enc.WriteInt64(42)           // Offset
-	enc.WriteString("")          // Metadata
-	enc.WriteInt32(-1)           // PartitionLeaderEpoch
+	enc.WriteString("")         // GroupInstanceID
+	enc.WriteInt32(1)           // NumTopics
+	enc.WriteString("orders")   // Topic
+	enc.WriteInt32(1)           // NumPartitions
+	enc.WriteInt32(0)           // Partition
+	enc.WriteInt64(42)          // Offset
+	enc.WriteString("")         // Metadata
+	enc.WriteInt32(-1)          // PartitionLeaderEpoch
 
 	groupID, reqs, err := ParseOffsetCommitRequest(enc.Bytes())
 	if err != nil {
