@@ -20,8 +20,8 @@ func ParseOffsetCommitRequest(reqData []byte) (string, []OffsetCommitRequestInfo
 	// MemberID
 	_, _ = dec.ReadString()
 
-	// GroupInstanceID
-	_, _ = dec.ReadString()
+	// RetentionTime (added in V2)
+	_, _ = dec.ReadInt64()
 
 	// Topics Array
 	topics32, err := dec.ReadInt32()
@@ -50,15 +50,11 @@ func ParseOffsetCommitRequest(reqData []byte) (string, []OffsetCommitRequestInfo
 			// Metadata
 			metadata, _ := dec.ReadString()
 
-			// PartitionLeaderEpoch (added in V13)
-			partitionLeaderEpoch, _ := dec.ReadInt32()
-
 			offsetCommitReqs = append(offsetCommitReqs, OffsetCommitRequestInfo{
-				Topic:                topicName,
-				Partition:            partition,
-				Offset:               offset,
-				Metadata:             metadata,
-				PartitionLeaderEpoch: partitionLeaderEpoch,
+				Topic:     topicName,
+				Partition: partition,
+				Offset:    offset,
+				Metadata:  metadata,
 			})
 		}
 	}
@@ -66,19 +62,29 @@ func ParseOffsetCommitRequest(reqData []byte) (string, []OffsetCommitRequestInfo
 	return groupID, offsetCommitReqs, nil
 }
 
-func HandleOffsetCommitResponse(correlationID int32) []byte {
+func HandleOffsetCommitResponse(correlationID int32, reqs []OffsetCommitRequestInfo) []byte {
 	enc := NewEncoder()
 	enc.WriteInt32(correlationID)
 
 	// throttle_time_ms
 	enc.WriteInt32(0)
 
+	// Group topics by name
+	topicMap := make(map[string][]int32)
+	for _, req := range reqs {
+		topicMap[req.Topic] = append(topicMap[req.Topic], req.Partition)
+	}
+
 	// Topics array
-	enc.WriteInt32(1)
-	enc.WriteString("test-topic")
-	enc.WriteInt32(1)
-	enc.WriteInt32(0)
-	enc.WriteInt16(0) // ErrorCode
+	enc.WriteInt32(int32(len(topicMap)))
+	for topicName, partitions := range topicMap {
+		enc.WriteString(topicName)
+		enc.WriteInt32(int32(len(partitions)))
+		for _, p := range partitions {
+			enc.WriteInt32(p)
+			enc.WriteInt16(0) // ErrorCode
+		}
+	}
 
 	return enc.Bytes()
 }

@@ -35,7 +35,7 @@ func NewSegment(dir string, topicID uint16) (*Segment, error) {
 		return nil, fmt.Errorf("segment mkdir: %w", err)
 	}
 	// Open file for read+write+append+create
-	filepath := fmt.Sprintf("%s/topic_%d.log", dir, topicID)
+	filepath := fmt.Sprintf("%s/segment_%d.log", dir, topicID)
 	file, err := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("segment open: %w", err)

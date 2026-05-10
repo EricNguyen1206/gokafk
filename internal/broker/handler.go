@@ -125,7 +125,7 @@ func (b *Broker) handleOffsetCommit(correlationID int32, data []byte) ([]byte, e
 		}
 	}
 
-	return proto.HandleOffsetCommitResponse(correlationID), nil
+	return proto.HandleOffsetCommitResponse(correlationID, reqs), nil
 }
 
 func (b *Broker) handleOffsetFetch(correlationID int32, data []byte) ([]byte, error) {

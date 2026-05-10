@@ -1,7 +1,7 @@
 // test/kafkajs/producer.test.js
 const { createKafkaClient } = require('./kafka')
 
-const TOPIC = 'test-topic'
+const TOPIC = 'pizza-status'
 
 describe('Producer — gokafk Compatibility', () => {
   let kafka
@@ -29,7 +29,7 @@ describe('Producer — gokafk Compatibility', () => {
   it('TC-03: producer.send() delivers one message', async () => {
     const result = await producer.send({
       topic: TOPIC,
-      messages: [{ key: 'hello', value: 'Hello KafkaJS user!' }],
+      messages: [{ key: 'status', value: 'Pizza is in the oven' }],
     })
     expect(result).toBeDefined()
     expect(result[0].errorCode).toBe(0)

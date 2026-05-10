@@ -1,8 +1,8 @@
 // test/kafkajs/consumer.test.js
 const { createKafkaClient } = require('./kafka')
 
-const TOPIC = 'test-topic'
-const GROUP_ID = 'test-group'
+const TOPIC = 'pizza-orders'
+const GROUP_ID = 'pizza-oven-group'
 
 describe('Consumer — gokafk Compatibility', () => {
   let kafka
@@ -17,7 +17,7 @@ describe('Consumer — gokafk Compatibility', () => {
     await producer.connect()
     await producer.send({
       topic: TOPIC,
-      messages: [{ key: 'hello', value: 'Hello KafkaJS user!' }],
+      messages: [{ key: 'order-123', value: 'Pepperoni Pizza' }],
     })
   })
 
@@ -45,7 +45,7 @@ describe('Consumer — gokafk Compatibility', () => {
         eachMessage: async ({ topic, partition, message }) => {
           clearTimeout(timeout)
           expect(topic).toBe(TOPIC)
-          expect(message.value.toString()).toBe('Hello KafkaJS user!')
+          expect(message.value.toString()).toBe('Pepperoni Pizza')
           resolve()
         },
       }).catch(reject)

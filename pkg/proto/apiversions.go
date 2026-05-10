@@ -17,7 +17,7 @@ func HandleApiVersions(correlationID int32) []byte {
 		{ApiKeyFetch, 0, 11},
 		{ApiKeyListOffsets, 0, 5},
 		{ApiKeyMetadata, 0, 9},
-		{ApiKeyOffsetCommit, 0, 8},
+		{ApiKeyOffsetCommit, 0, 2},
 		{ApiKeyOffsetFetch, 0, 5},
 		{ApiKeyFindCoordinator, 0, 3},
 		{ApiKeyJoinGroup, 0, 7},
