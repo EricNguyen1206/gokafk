@@ -2,12 +2,14 @@ package proto
 
 import "testing"
 
+const TEST_CORRELATION_ID = 77
+
 func TestHandleOffsetCommitResponse_CorrelationID(t *testing.T) {
-	resp := HandleOffsetCommitResponse(77)
+	resp := HandleOffsetCommitResponse(TEST_CORRELATION_ID, nil)
 	dec := NewDecoder(resp)
 	corrID, _ := dec.ReadInt32()
-	if corrID != 77 {
-		t.Errorf("correlationID: want 77, got %d", corrID)
+	if corrID != TEST_CORRELATION_ID {
+		t.Errorf("correlationID: want %d, got %d", TEST_CORRELATION_ID, corrID)
 	}
 }
 
