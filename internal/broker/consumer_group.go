@@ -12,7 +12,7 @@ type ConsumerGroup struct {
 	group       string
 	members     map[string]*Consumer // memberID -> consumer
 	assignments map[string][]int     // memberID -> partition IDs
-	offsets     map[int]int64        // partitionID -> committed offset
+	offsets     map[int]int64        // partitionID -> committed NEXT offset
 }
 
 type Consumer struct {

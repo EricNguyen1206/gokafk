@@ -55,33 +55,43 @@ func (b *Broker) routeMessage(ctx context.Context, header *proto.RequestHeader, 
 }
 
 func (b *Broker) handleProduce(correlationID int32, data []byte) ([]byte, error) {
-	slog.Debug("handleProduce", "bytes", len(data), "raw", data[:min(len(data), 40)])
 	records, err := proto.ParseProduceRequest(data)
 	if err != nil {
 		slog.Error("parse produce failed", "err", err)
-		// Not crash connection, just return error response
 		return proto.HandleProduceResponse(correlationID, "unknown", 0, -1), nil
 	}
 
 	if len(records) == 0 {
 		return proto.HandleProduceResponse(correlationID, "test-topic", 0, 0), nil
 	}
-	// TODO: Support produce multiple records
-	rec := records[0]
-	tp, err := b.getOrCreateTopic(rec.Topic)
-	if err != nil {
-		slog.Error("get topic failed", "topic", rec.Topic, "err", err)
-		return proto.HandleProduceResponse(correlationID, rec.Topic, 0, -1), nil
+
+	var baseOffset int64 = -1
+	var lastTopic string
+	var lastPartition int32
+
+	for i, rec := range records {
+		tp, err := b.getOrCreateTopic(rec.Topic)
+		if err != nil {
+			slog.Error("get topic failed", "topic", rec.Topic, "err", err)
+			continue
+		}
+
+		_, offset, err := tp.Append(rec.Key, rec.Value)
+		if err != nil {
+			slog.Error("append failed", "err", err)
+			continue
+		}
+
+		if i == 0 {
+			baseOffset = offset
+			lastTopic = rec.Topic
+			lastPartition = rec.Partition
+		}
+		ts, _ := tp.PartitionTimestampAt(int(rec.Partition), offset)
+		slog.Info("produced", "topic", rec.Topic, "offset", offset, "ts", ts, "val", string(rec.Value))
 	}
 
-	_, offset, err := tp.Append(rec.Key, rec.Value)
-	if err != nil {
-		slog.Error("append failed", "err", err)
-		return proto.HandleProduceResponse(correlationID, rec.Topic, 0, -1), nil
-	}
-	slog.Info("produced", "topic", rec.Topic, "offset", offset, "val", string(rec.Value))
-
-	return proto.HandleProduceResponse(correlationID, rec.Topic, rec.Partition, offset), nil
+	return proto.HandleProduceResponse(correlationID, lastTopic, lastPartition, baseOffset), nil
 }
 
 func (b *Broker) handleFetch(correlationID int32, data []byte) ([]byte, error) {
@@ -228,7 +238,7 @@ func (b *Broker) handleListOffsets(correlationID int32, data []byte) ([]byte, er
 			}
 		}
 
-		slog.Info("list offsets", "topic", req.Topic, "partition", req.Partition, "timestamp", req.Timestamp, "offset", entry.Offset)
+		slog.Info("list offsets", "topic", req.Topic, "partition", req.Partition, "reqTimestamp", req.Timestamp, "foundOffset", entry.Offset, "foundTimestamp", entry.Timestamp)
 		entries = append(entries, entry)
 	}
 

@@ -23,7 +23,7 @@ func TestGetOrCreateTopicWithPartitions_CustomCount(t *testing.T) {
 }
 
 func TestGetOrCreateTopicWithPartitions_DefaultFallback(t *testing.T) {
-	cfg := config.DefaultConfig()
+	cfg := config.LoadConfig()
 	cfg.BrokerPort = 0
 	cfg.DataDir = t.TempDir()
 	b := NewBroker(cfg)

@@ -36,7 +36,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	cfg := config.DefaultConfig()
+	cfg := config.LoadConfig()
 
 	if err := runServer(ctx, cfg); err != nil {
 		slog.Error("server error", "err", err)

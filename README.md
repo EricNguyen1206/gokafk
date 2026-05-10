@@ -36,20 +36,36 @@ docker run -p 10000:10000 gokafk
 
 ### Test with KafkaJS
 
+```bash
+cd test/kafkajs
+npm test
+```
+
+Example usage with multi-message support:
 ```javascript
 const { Kafka } = require('kafkajs')
 const kafka = new Kafka({ brokers: ['localhost:10000'] })
 
-// Produce
+// Produce multiple messages in one batch
 const p = kafka.producer()
 await p.connect()
-await p.send({ topic: 'orders', messages: [{ key: 'u1', value: 'hello' }] })
+await p.send({ 
+  topic: 'pizza-orders', 
+  messages: [
+    { key: 'o1', value: 'Pepperoni' },
+    { key: 'o2', value: 'Margherita' }
+  ] 
+})
 
-// Consume
-const c = kafka.consumer({ groupId: 'orders-group' })
+// Consume (resumes from committed offset)
+const c = kafka.consumer({ groupId: 'chef-team' })
 await c.connect()
-await c.subscribe({ topic: 'orders', fromBeginning: true })
-await c.run({ eachMessage: async ({ message }) => console.log(message.value.toString()) })
+await c.subscribe({ topic: 'pizza-orders', fromBeginning: true })
+await c.run({ 
+  eachMessage: async ({ message }) => {
+    console.log(`Cooking: ${message.value.toString()}`)
+  } 
+})
 ```
 
 ## 12 Kafka APIs

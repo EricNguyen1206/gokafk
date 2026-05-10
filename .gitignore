@@ -1,1 +1,6 @@
 data/logs/
+.env
+
+
+# KafkaJS tests
+test/kafkajs/node_modules/
