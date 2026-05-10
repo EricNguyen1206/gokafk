@@ -17,7 +17,7 @@ import (
 type Broker struct {
 	cfg      *config.Config
 	mu       sync.RWMutex
-	topics   map[string]*Topic         // topicID → Topic
+	topics   map[string]*Topic         // topicName → Topic
 	groups   map[string]*GroupMetadata // groupID → group coordinator
 	listener net.Listener
 	wg       sync.WaitGroup

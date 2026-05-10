@@ -115,3 +115,11 @@ test/kafkajs/                   KafkaJS integration tests
 | APIs | 12 Kafka APIs |
 
 > [Wiki](https://github.com/EricNguyen1206/gokafk/wiki)
+
+## Future Improvements
+
+- [ ] **Log Segment Rotation**: Support multiple segment files per partition. Automatically roll to a new segment when `MaxSegmentSize` is reached.
+- [ ] **Retention Policies**: Implement automatic cleanup of old segments based on time (e.g., 7 days) or partition size limits.
+- [ ] **Log Compaction**: Support deduplication of records by key within segments.
+- [ ] **Zero-copy (sendfile)**: Optimize the `Fetch` operation using `os.File.WriteTo` or `sendfile` to transfer data directly from disk to network buffer.
+- [ ] **Producer Acks**: Support `Acks=1` and `Acks=all` (once replication is implemented).
